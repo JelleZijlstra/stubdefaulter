@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 
 Tool to add default values to stubs.
@@ -6,23 +8,23 @@ Usage: python stubdefaulter.py path/to/typeshed
 
 TODO:
 - Support methods, not just top-level functions
-- Support third-party stubs
 - Maybe enable adding more default values (floats?)
-- Run on multiple Python versions to pick up the right defaults
 
 """
 
 import argparse
 import ast
-from dataclasses import dataclass
 import importlib
 import inspect
-import libcst
 import itertools
-from pathlib import Path
+import sys
 import textwrap
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List
+
+import libcst
 import typeshed_client
-from typing import Any
 
 
 def contains_ellipses(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -67,6 +69,15 @@ class ReplaceEllipses(libcst.CSTTransformer):
         return updated_node
 
 
+def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    if sys.version_info >= (3, 8):
+        assert hasattr(node, "end_lineno")
+        assert node.end_lineno is not None
+        return node.end_lineno
+    else:
+        return max(child.lineno for child in ast.iter_child_nodes(node))
+
+
 def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -76,8 +87,8 @@ def replace_defaults_in_func(
         sig = inspect.signature(runtime_func)
     except Exception:
         return {}
-    assert node.end_lineno is not None
-    lines = stub_lines[node.lineno - 1 : node.end_lineno]
+    end_lineno = get_end_lineno(node)
+    lines = stub_lines[node.lineno - 1 : end_lineno]
     indentation = len(lines[0]) - len(lines[0].lstrip())
     cst = libcst.parse_statement(
         textwrap.dedent("".join(line + "\n" for line in lines))
@@ -86,7 +97,7 @@ def replace_defaults_in_func(
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
     output_dict = {node.lineno - 1: new_code.splitlines()}
-    for i in range(node.lineno, node.end_lineno):
+    for i in range(node.lineno, end_lineno):
         output_dict[i] = []
     return output_dict
 
@@ -107,7 +118,8 @@ def add_defaults_to_stub(
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text().splitlines()
-    replacement_lines: dict[int, list[str]] = {}
+    # pyanalyze doesn't let you use dict[] here
+    replacement_lines: Dict[int, List[str]] = {}
     for name, info in stub_names.items():
         if isinstance(
             info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)
@@ -129,16 +141,50 @@ def add_defaults_to_stub(
                 f.write(line + "\n")
 
 
+def is_relative_to(left: Path, right: Path) -> bool:
+    """Return True if the path is relative to another path or False.
+
+    Redundant with Path.is_relative_to in 3.9+.
+
+    """
+    try:
+        left.relative_to(right)
+        return True
+    except ValueError:
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("typeshed_path", help="path to typeshed")
+    parser.add_argument(
+        "-s",
+        "--stdlib-path",
+        help=(
+            "Path to typeshed's stdlib directory. If given, we will add defaults to"
+            " stubs in this directory."
+        ),
+    )
+    parser.add_argument(
+        "-p",
+        "--packages",
+        nargs="+",
+        help=(
+            "List of packages to add defaults to. We will add defaults to all stubs in"
+            " these directories. The runtime package must be installed."
+        ),
+    )
     args = parser.parse_args()
 
-    for version in range(11, 6, -1):
-        context = typeshed_client.finder.get_search_context(
-            typeshed=Path(args.typeshed_path), version=(3, version)
-        )
-        for module, _ in typeshed_client.get_all_stub_files(context):
+    stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
+    package_paths = [Path(p) for p in args.packages]
+
+    context = typeshed_client.finder.get_search_context(
+        typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
+    )
+    for module, path in typeshed_client.get_all_stub_files(context):
+        if stdlib_path is not None and is_relative_to(path, stdlib_path):
+            add_defaults_to_stub(module, context)
+        elif any(is_relative_to(path, p) for p in package_paths):
             add_defaults_to_stub(module, context)
 
 
