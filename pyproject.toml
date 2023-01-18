@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "stubdefaulter"
 version = "0.0.0"
 description = "Autoadd default values to stubs"
-requires-python = ">=3.10"
+requires-python = ">=3.7"
 dependencies = ["libcst", "typeshed_client"]
 
 [project.optional-dependencies]
