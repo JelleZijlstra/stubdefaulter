@@ -9,12 +9,16 @@ import stubdefaulter
 PY_FILE = """
 def f(x=0, y="y", z=True, a=None):
     pass
+def more_ints(x=-1, y=0):
+    pass
 """
 INPUT_STUB = """
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
+def more_ints(x: int = ..., y: bool = ...) -> None: ...
 """
 EXPECTED_STUB = """
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
+def more_ints(x: int = -1, y: bool = ...) -> None: ...
 """
 PKG_NAME = "pkg"
 
