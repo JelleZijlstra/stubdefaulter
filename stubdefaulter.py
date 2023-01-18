@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 
 Tool to add default values to stubs.
@@ -6,9 +8,7 @@ Usage: python stubdefaulter.py path/to/typeshed
 
 TODO:
 - Support methods, not just top-level functions
-- Support third-party stubs
 - Maybe enable adding more default values (floats?)
-- Run on multiple Python versions to pick up the right defaults
 
 """
 
@@ -20,6 +20,7 @@ import inspect
 import libcst
 import itertools
 from pathlib import Path
+import sys
 import textwrap
 import typeshed_client
 from typing import Any
@@ -131,14 +132,33 @@ def add_defaults_to_stub(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("typeshed_path", help="path to typeshed")
+    parser.add_argument(
+        "-s", "--stdlib-path",
+        help=(
+            "Path to typeshed's stdlib directory. If given, we will add defaults to"
+            " stubs in this directory."
+        ),
+    )
+    parser.add_argument(
+       "-p", "--packages",
+        nargs="+",
+        help=(
+            "List of packages to add defaults to. We will add defaults to all stubs in"
+            " these directories. The runtime package must be installed."
+        ),
+    )
     args = parser.parse_args()
 
-    for version in range(11, 6, -1):
-        context = typeshed_client.finder.get_search_context(
-            typeshed=Path(args.typeshed_path), version=(3, version)
-        )
-        for module, _ in typeshed_client.get_all_stub_files(context):
+    stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
+    package_paths = [Path(p) for p in args.packages]
+
+    context = typeshed_client.finder.get_search_context(
+        typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
+    )
+    for module, path in typeshed_client.get_all_stub_files(context):
+        if stdlib_path is not None and path.is_relative_to(stdlib_path):
+            add_defaults_to_stub(module, context)
+        elif any(path.is_relative_to(p) for p in package_paths):
             add_defaults_to_stub(module, context)
 
 
