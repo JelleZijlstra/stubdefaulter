@@ -71,6 +71,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
 
 def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     if sys.version_info >= (3, 8):
+        assert hasattr(node, "end_lineno")
         assert node.end_lineno is not None
         return node.end_lineno
     else:
