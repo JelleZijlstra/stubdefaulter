@@ -15,7 +15,7 @@ import sys
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 import libcst
 import tomli
@@ -53,7 +53,7 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
 class ReplaceEllipses(libcst.CSTTransformer):
     sig: inspect.Signature
     num_added: int = 0
-    errors: list[tuple[str, object, object]] = field(default_factory=list)
+    errors: List[Tuple[str, object, object]] = field(default_factory=list)
 
     def infer_value_for_default(
         self, node: libcst.Param
