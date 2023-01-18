@@ -59,7 +59,14 @@ class ReplaceEllipses(libcst.CSTTransformer):
             return updated_node.with_changes(
                 default=libcst.SimpleString(value=repr(param.default))
             )
-        elif isinstance(param.default, int) and param.default >= 0:
+        elif isinstance(param.default, int):
+            if (
+                original_node.annotation
+                and isinstance(original_node.annotation.annotation, libcst.Name)
+                and original_node.annotation.annotation.value == "bool"
+            ):
+                # Skip cases where the type is annotated as bool but the default is an int.
+                return updated_node
             self.num_added += 1
             if param.default >= 0:
                 default = libcst.Integer(value=str(param.default))
