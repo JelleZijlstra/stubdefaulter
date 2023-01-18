@@ -4,12 +4,6 @@ from __future__ import annotations
 
 Tool to add default values to stubs.
 
-Usage: python stubdefaulter.py path/to/typeshed
-
-TODO:
-- Support methods, not just top-level functions
-- Maybe enable adding more default values (floats?)
-
 """
 
 import argparse
