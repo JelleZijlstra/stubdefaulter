@@ -27,6 +27,9 @@ def contains_ellipses(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for default in itertools.chain(node.args.defaults, node.args.kw_defaults):
         if isinstance(default, ast.Constant) and default.value is Ellipsis:
             return True
+        elif isinstance(default, ast.Ellipsis):
+            # 3.7
+            return True
     return False
 
 
@@ -75,7 +78,11 @@ def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
         assert node.end_lineno is not None
         return node.end_lineno
     else:
-        return max(child.lineno for child in ast.iter_child_nodes(node))
+        return max(
+            child.lineno
+            for child in ast.iter_child_nodes(node)
+            if hasattr(child, "lineno")
+        )
 
 
 def replace_defaults_in_func(
