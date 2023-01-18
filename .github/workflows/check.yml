@@ -10,7 +10,7 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
-    name: test import
+    name: run tests
     strategy:
       matrix:
         python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
@@ -22,4 +22,5 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e .
-      - run: python3 stubdefaulter.py --help
+      - run: pip install pytest
+      - run: python3 -m pytest test_stubdefaulter.py
