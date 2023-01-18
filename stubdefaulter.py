@@ -180,7 +180,7 @@ def add_defaults_to_stub(
                 print("Could not find", name, "in runtime module")
                 continue
             funcs = [(info.ast, runtime_func)]
-        elif isinstance(info.ast, ast.ClassDef):
+        elif isinstance(info.ast, ast.ClassDef) and info.child_nodes:
             funcs = []
             try:
                 runtime_class = getattr(runtime_module, name)
