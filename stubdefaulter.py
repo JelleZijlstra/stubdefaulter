@@ -14,16 +14,17 @@ TODO:
 
 import argparse
 import ast
-from dataclasses import dataclass
 import importlib
 import inspect
-import libcst
 import itertools
-from pathlib import Path
 import sys
 import textwrap
-import typeshed_client
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+import libcst
+import typeshed_client
 
 
 def contains_ellipses(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -133,14 +134,16 @@ def add_defaults_to_stub(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-s", "--stdlib-path",
+        "-s",
+        "--stdlib-path",
         help=(
             "Path to typeshed's stdlib directory. If given, we will add defaults to"
             " stubs in this directory."
         ),
     )
     parser.add_argument(
-       "-p", "--packages",
+        "-p",
+        "--packages",
         nargs="+",
         help=(
             "List of packages to add defaults to. We will add defaults to all stubs in"
