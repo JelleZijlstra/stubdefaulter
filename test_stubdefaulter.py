@@ -13,23 +13,53 @@ def more_ints(x=-1, y=0):
     pass
 def wrong_default(wrong=0):
     pass
+
 class Capybara:
     def __init__(self, x=0, y="y", z=True, a=None):
         pass
+    def overloaded_method(x=False):
+        return 1 if x else "1"
+
+def overloaded(x=False):
+    return 1 if x else "1"
 """
 INPUT_STUB = """
+from typing import overload, Literal
+
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
 def more_ints(x: int = ..., y: bool = ...) -> None: ...
 def wrong_default(wrong: int = 1) -> None: ...
+
 class Capybara:
     def __init__(self, x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
+    @overload
+    def overloaded_method(x: Literal[False] = ...) -> str: ...
+    @overload
+    def overloaded_method(x: Literal[True]) -> int: ...
+
+@overload
+def overloaded(x: Literal[False] = ...) -> str: ...
+@overload
+def overloaded(x: Literal[True]) -> int: ...
 """
 EXPECTED_STUB = """
+from typing import overload, Literal
+
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
 def more_ints(x: int = -1, y: bool = ...) -> None: ...
 def wrong_default(wrong: int = 1) -> None: ...
+
 class Capybara:
     def __init__(self, x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
+    @overload
+    def overloaded_method(x: Literal[False] = ...) -> str: ...
+    @overload
+    def overloaded_method(x: Literal[True]) -> int: ...
+
+@overload
+def overloaded(x: Literal[False] = ...) -> str: ...
+@overload
+def overloaded(x: Literal[True]) -> int: ...
 """
 PKG_NAME = "pkg"
 
