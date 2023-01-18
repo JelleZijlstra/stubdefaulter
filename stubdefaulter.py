@@ -21,7 +21,7 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 import libcst
 import typeshed_client
@@ -109,7 +109,8 @@ def add_defaults_to_stub(
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text().splitlines()
-    replacement_lines: dict[int, list[str]] = {}
+    # pyanalyze doesn't let you use dict[] here
+    replacement_lines: Dict[int, List[str]] = {}
     for name, info in stub_names.items():
         if isinstance(
             info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)
