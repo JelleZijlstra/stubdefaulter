@@ -10,73 +10,105 @@ import argparse
 import ast
 import importlib
 import inspect
-import itertools
 import subprocess
 import sys
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 import libcst
 import tomli
 import typeshed_client
 
 
-def contains_ellipses(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    for default in itertools.chain(node.args.defaults, node.args.kw_defaults):
-        if isinstance(default, ast.Constant) and default.value is Ellipsis:
+def infer_value_of_node(node: libcst.BaseExpression) -> object:
+    """Return NotImplemented if we can't infer the value."""
+    if isinstance(node, libcst.Integer):
+        return int(node.value)
+    elif isinstance(node, libcst.SimpleString):
+        return ast.literal_eval(node.value)
+    elif isinstance(node, libcst.Name):
+        if node.value == "True":
             return True
-        elif isinstance(default, ast.Ellipsis):
-            # 3.7
-            return True
-    return False
+        elif node.value == "False":
+            return False
+        elif node.value == "None":
+            return None
+        else:
+            return NotImplemented
+    elif isinstance(node, libcst.UnaryOperation):
+        if isinstance(node.operator, libcst.Minus):
+            operand = infer_value_of_node(node.expression)
+            if not isinstance(operand, int):
+                return NotImplemented
+            return -operand
+        else:
+            return NotImplemented
+    else:
+        return NotImplemented
 
 
 @dataclass
 class ReplaceEllipses(libcst.CSTTransformer):
     sig: inspect.Signature
     num_added: int = 0
+    errors: List[Tuple[str, object, object]] = field(default_factory=list)
+
+    def infer_value_for_default(
+        self, node: libcst.Param
+    ) -> libcst.BaseExpression | None:
+        try:
+            param = self.sig.parameters[node.name.value]
+        except KeyError:
+            return None
+        if param.default is inspect.Parameter.empty:
+            return None
+        if isinstance(param.default, bool) or param.default is None:
+            self.num_added += 1
+            return libcst.Name(value=str(param.default))
+        elif isinstance(param.default, str):
+            return libcst.SimpleString(value=repr(param.default))
+        elif isinstance(param.default, int):
+            if (
+                node.annotation
+                and isinstance(node.annotation.annotation, libcst.Name)
+                and node.annotation.annotation.value == "bool"
+            ):
+                # Skip cases where the type is annotated as bool but the default is an int.
+                return None
+            if param.default >= 0:
+                return libcst.Integer(value=str(param.default))
+            else:
+                return libcst.UnaryOperation(
+                    operator=libcst.Minus(),
+                    expression=libcst.Integer(value=str(-param.default)),
+                )
+        return None
 
     def leave_Param(
         self, original_node: libcst.Param, updated_node: libcst.Param
     ) -> libcst.Param:
-        if not isinstance(original_node.default, libcst.Ellipsis):
+        if original_node.default is None:
             return updated_node
-        try:
-            param = self.sig.parameters[original_node.name.value]
-        except KeyError:
+        inferred_default = self.infer_value_for_default(original_node)
+        if inferred_default is None:
             return updated_node
-        if param.default is inspect.Parameter.empty:
-            return updated_node
-        if isinstance(param.default, bool) or param.default is None:
+        if isinstance(original_node.default, libcst.Ellipsis):
             self.num_added += 1
-            return updated_node.with_changes(
-                default=libcst.Name(value=str(param.default))
-            )
-        elif isinstance(param.default, str):
-            self.num_added += 1
-            return updated_node.with_changes(
-                default=libcst.SimpleString(value=repr(param.default))
-            )
-        elif isinstance(param.default, int):
-            if (
-                original_node.annotation
-                and isinstance(original_node.annotation.annotation, libcst.Name)
-                and original_node.annotation.annotation.value == "bool"
-            ):
-                # Skip cases where the type is annotated as bool but the default is an int.
+            return updated_node.with_changes(default=inferred_default)
+        else:
+            existing_value = infer_value_of_node(original_node.default)
+            if existing_value is NotImplemented:
                 return updated_node
-            self.num_added += 1
-            if param.default >= 0:
-                default = libcst.Integer(value=str(param.default))
-            else:
-                default = libcst.UnaryOperation(
-                    operator=libcst.Minus(),
-                    expression=libcst.Integer(value=str(-param.default)),
+            inferred_value = infer_value_of_node(inferred_default)
+            if existing_value != inferred_value or type(inferred_value) is not type(
+                existing_value
+            ):
+                self.errors.append(
+                    (original_node.name.value, existing_value, inferred_value)
                 )
-            return updated_node.with_changes(default=default)
-        return updated_node
+            return updated_node
 
 
 def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
@@ -96,11 +128,11 @@ def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     runtime_func: Any,
-) -> tuple[int, dict[int, list[str]]]:
+) -> tuple[int, list[str], dict[int, list[str]]]:
     try:
         sig = inspect.signature(runtime_func)
     except Exception:
-        return 0, {}
+        return 0, [], {}
     end_lineno = get_end_lineno(node)
     lines = stub_lines[node.lineno - 1 : end_lineno]
     indentation = len(lines[0]) - len(lines[0].lstrip())
@@ -114,12 +146,16 @@ def replace_defaults_in_func(
     output_dict = {node.lineno - 1: new_code.splitlines()}
     for i in range(node.lineno, end_lineno):
         output_dict[i] = []
-    return visitor.num_added, output_dict
+    errors = [
+        f"parameter {param_name}: stub default {stub_default!r} != runtime default {runtime_default!r}"
+        for param_name, stub_default, runtime_default in visitor.errors
+    ]
+    return visitor.num_added, errors, output_dict
 
 
 def add_defaults_to_stub(
     module_name: str, context: typeshed_client.finder.SearchContext
-) -> None:
+) -> list[str]:
     print(f"Processing {module_name}... ", end="", flush=True)
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
@@ -128,7 +164,7 @@ def add_defaults_to_stub(
         runtime_module = importlib.import_module(module_name)
     except ImportError:
         print("Could not import", module_name)
-        return None
+        return []
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -136,18 +172,21 @@ def add_defaults_to_stub(
     # pyanalyze doesn't let you use dict[] here
     replacement_lines: Dict[int, List[str]] = {}
     total_num_added = 0
+    errors = []
     for name, info in stub_names.items():
-        if isinstance(
-            info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)
-        ) and contains_ellipses(info.ast):
+        if isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
             try:
                 runtime_func = getattr(runtime_module, name)
             except AttributeError:
                 print("Could not find", name, "in runtime module")
                 continue
-            num_added, new_lines = replace_defaults_in_func(
+            num_added, new_errors, new_lines = replace_defaults_in_func(
                 stub_lines, info.ast, runtime_func
             )
+            for error in new_errors:
+                message = f"{module_name}.{name}: {error}"
+                errors.append(message)
+                print(message)
             replacement_lines.update(new_lines)
             total_num_added += num_added
     with path.open("w") as f:
@@ -158,6 +197,7 @@ def add_defaults_to_stub(
             else:
                 f.write(line + "\n")
     print(f"added {total_num_added} defaults")
+    return errors
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -229,11 +269,13 @@ def main() -> None:
     context = typeshed_client.finder.get_search_context(
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
+    errors = []
     for module, path in typeshed_client.get_all_stub_files(context):
         if stdlib_path is not None and is_relative_to(path, stdlib_path):
-            add_defaults_to_stub(module, context)
+            errors += add_defaults_to_stub(module, context)
         elif any(is_relative_to(path, p) for p in package_paths):
-            add_defaults_to_stub(module, context)
+            errors += add_defaults_to_stub(module, context)
+    sys.exit(1 if errors else 0)
 
 
 if __name__ == "__main__":
