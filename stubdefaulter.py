@@ -180,8 +180,28 @@ def add_defaults_to_stub(
             except AttributeError:
                 print("Could not find", name, "in runtime module")
                 continue
+            funcs = [(info.ast, runtime_func)]
+        elif isinstance(info.ast, ast.ClassDef):
+            funcs = []
+            try:
+                runtime_class = getattr(runtime_module, name)
+            except AttributeError:
+                print("Could not find", name, "in runtime module")
+                continue
+            for child in info.ast.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    try:
+                        runtime_func = getattr(runtime_class, child.name)
+                    except AttributeError:
+                        print(f"Could not find {name}.{child.name} in runtime module")
+                        continue
+                    funcs.append((child, runtime_func))
+        else:
+            funcs = []
+
+        for func, runtime_func in funcs:
             num_added, new_errors, new_lines = replace_defaults_in_func(
-                stub_lines, info.ast, runtime_func
+                stub_lines, func, runtime_func
             )
             for error in new_errors:
                 message = f"{module_name}.{name}: {error}"
