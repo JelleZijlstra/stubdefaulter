@@ -131,6 +131,19 @@ def add_defaults_to_stub(
                 f.write(line + "\n")
 
 
+def is_relative_to(left: Path, right: Path) -> bool:
+    """Return True if the path is relative to another path or False.
+
+    Redundant with Path.is_relative_to in 3.9+.
+
+    """
+    try:
+        left.relative_to(right)
+        return True
+    except ValueError:
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -159,9 +172,9 @@ def main() -> None:
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
     for module, path in typeshed_client.get_all_stub_files(context):
-        if stdlib_path is not None and path.is_relative_to(stdlib_path):
+        if stdlib_path is not None and is_relative_to(path, stdlib_path):
             add_defaults_to_stub(module, context)
-        elif any(path.is_relative_to(p) for p in package_paths):
+        elif any(is_relative_to(path, p) for p in package_paths):
             add_defaults_to_stub(module, context)
 
 
