@@ -17,13 +17,15 @@ import ast
 import importlib
 import inspect
 import itertools
+import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import libcst
+import tomli
 import typeshed_client
 
 
@@ -37,6 +39,7 @@ def contains_ellipses(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 @dataclass
 class ReplaceEllipses(libcst.CSTTransformer):
     sig: inspect.Signature
+    num_added: int = 0
 
     def leave_Param(
         self, original_node: libcst.Param, updated_node: libcst.Param
@@ -50,14 +53,17 @@ class ReplaceEllipses(libcst.CSTTransformer):
         if param.default is inspect.Parameter.empty:
             return updated_node
         if isinstance(param.default, bool) or param.default is None:
+            self.num_added += 1
             return updated_node.with_changes(
                 default=libcst.Name(value=str(param.default))
             )
         elif isinstance(param.default, str):
+            self.num_added += 1
             return updated_node.with_changes(
                 default=libcst.SimpleString(value=repr(param.default))
             )
         elif isinstance(param.default, int) and param.default >= 0:
+            self.num_added += 1
             if param.default >= 0:
                 default = libcst.Integer(value=str(param.default))
             else:
@@ -82,30 +88,31 @@ def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     runtime_func: Any,
-) -> dict[int, list[str]]:
+) -> tuple[int, dict[int, list[str]]]:
     try:
         sig = inspect.signature(runtime_func)
     except Exception:
-        return {}
+        return 0, {}
     end_lineno = get_end_lineno(node)
     lines = stub_lines[node.lineno - 1 : end_lineno]
     indentation = len(lines[0]) - len(lines[0].lstrip())
     cst = libcst.parse_statement(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
-    modified = cst.visit(ReplaceEllipses(sig))
+    visitor = ReplaceEllipses(sig)
+    modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
     output_dict = {node.lineno - 1: new_code.splitlines()}
     for i in range(node.lineno, end_lineno):
         output_dict[i] = []
-    return output_dict
+    return visitor.num_added, output_dict
 
 
 def add_defaults_to_stub(
     module_name: str, context: typeshed_client.finder.SearchContext
 ) -> None:
-    print(f"Processing {module_name}")
+    print(f"Processing {module_name}... ", end="", flush=True)
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -120,6 +127,7 @@ def add_defaults_to_stub(
     stub_lines = path.read_text().splitlines()
     # pyanalyze doesn't let you use dict[] here
     replacement_lines: Dict[int, List[str]] = {}
+    total_num_added = 0
     for name, info in stub_names.items():
         if isinstance(
             info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)
@@ -129,9 +137,11 @@ def add_defaults_to_stub(
             except AttributeError:
                 print("Could not find", name, "in runtime module")
                 continue
-            replacement_lines.update(
-                replace_defaults_in_func(stub_lines, info.ast, runtime_func)
+            num_added, new_lines = replace_defaults_in_func(
+                stub_lines, info.ast, runtime_func
             )
+            replacement_lines.update(new_lines)
+            total_num_added += num_added
     with path.open("w") as f:
         for i, line in enumerate(stub_lines):
             if i in replacement_lines:
@@ -139,6 +149,7 @@ def add_defaults_to_stub(
                     f.write(new_line + "\n")
             else:
                 f.write(line + "\n")
+    print(f"added {total_num_added} defaults")
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -152,6 +163,23 @@ def is_relative_to(left: Path, right: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
+    to_install: List[str] = []
+    for path in typeshed_paths:
+        metadata_path = path / "METADATA.toml"
+        if not metadata_path.exists():
+            print(f"{path} does not look like a typeshed package", file=sys.stderr)
+            sys.exit(1)
+        metadata_bytes = metadata_path.read_text()
+        metadata = tomli.loads(metadata_bytes)
+        version = metadata["version"]
+        to_install.append(f"{path.name}=={version}")
+    if to_install:
+        command = [sys.executable, "-m", "pip", "install", *to_install]
+        print(f"Running install command: {' '.join(command)}")
+        subprocess.check_call(command)
 
 
 def main() -> None:
@@ -172,11 +200,23 @@ def main() -> None:
             "List of packages to add defaults to. We will add defaults to all stubs in"
             " these directories. The runtime package must be installed."
         ),
+        default=(),
+    )
+    parser.add_argument(
+        "-t",
+        "--typeshed-packages",
+        nargs="+",
+        help=(
+            "List of typeshed packages to add defaults to. WARNING: We will install the package locally."
+        ),
+        default=(),
     )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
-    package_paths = [Path(p) for p in args.packages]
+    typeshed_paths = [Path(p) for p in args.typeshed_packages]
+    install_typeshed_packages(typeshed_paths)
+    package_paths = [Path(p) for p in args.packages] + typeshed_paths
 
     context = typeshed_client.finder.get_search_context(
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
