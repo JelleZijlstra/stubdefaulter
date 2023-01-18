@@ -89,6 +89,8 @@ class ReplaceEllipses(libcst.CSTTransformer):
     def leave_Param(
         self, original_node: libcst.Param, updated_node: libcst.Param
     ) -> libcst.Param:
+        if original_node.default is None:
+            return updated_node
         inferred_default = self.infer_value_for_default(original_node)
         if inferred_default is None:
             return updated_node
