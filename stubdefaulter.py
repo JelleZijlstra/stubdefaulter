@@ -68,7 +68,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
             return libcst.Name(value=str(param.default))
         elif isinstance(param.default, str):
             return libcst.SimpleString(value=repr(param.default))
-        elif isinstance(param.default, int):
+        elif type(param.default) is int:
             if (
                 node.annotation
                 and isinstance(node.annotation.annotation, libcst.Name)

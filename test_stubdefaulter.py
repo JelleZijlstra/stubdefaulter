@@ -7,6 +7,8 @@ import typeshed_client
 import stubdefaulter
 
 PY_FILE = """
+import re
+
 def f(x=0, y="y", z=True, a=None):
     pass
 def more_ints(x=-1, y=0):
@@ -22,8 +24,12 @@ class Capybara:
 
 def overloaded(x=False):
     return 1 if x else "1"
+
+def intenum_default(x=re.ASCII):
+    return int(x)
 """
 INPUT_STUB = """
+import re
 from typing import overload, Literal
 
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
@@ -41,8 +47,11 @@ class Capybara:
 def overloaded(x: Literal[False] = ...) -> str: ...
 @overload
 def overloaded(x: Literal[True]) -> int: ...
+
+def intenum_default(x: int = ...) -> int: ...
 """
 EXPECTED_STUB = """
+import re
 from typing import overload, Literal
 
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
@@ -60,6 +69,8 @@ class Capybara:
 def overloaded(x: Literal[False] = ...) -> str: ...
 @overload
 def overloaded(x: Literal[True]) -> int: ...
+
+def intenum_default(x: int = ...) -> int: ...
 """
 PKG_NAME = "pkg"
 
