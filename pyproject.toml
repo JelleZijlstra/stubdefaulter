@@ -9,6 +9,9 @@ description = "Autoadd default values to stubs"
 requires-python = ">=3.7"
 dependencies = ["libcst", "typeshed_client", "tomli"]
 
+[project.scripts]
+stubdefaulter = "stubdefaulter:main"
+
 [project.optional-dependencies]
 dev = [
     "black==22.12.0",            # Must match .pre-commit-config.yaml
@@ -17,4 +20,5 @@ dev = [
     "isort==5.11.4",             # Must match .pre-commit-config.yaml
     "mypy==0.991",
     "pre-commit-hooks==4.4.0",   # Must match .pre-commit-config.yaml
+    "pytest",
 ]
