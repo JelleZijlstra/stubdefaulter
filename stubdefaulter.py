@@ -169,7 +169,8 @@ def add_defaults_to_stub(
     except Exception as e:
         print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return []
-    stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
+    with contextlib.redirect_stderr(io.StringIO()):
+        stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text().splitlines()
