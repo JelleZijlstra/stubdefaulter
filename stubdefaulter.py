@@ -250,7 +250,7 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
         subprocess.check_call(command)
 
 
-# _typeshed doesn't exist at runtime; no point trying to add defaults
+# `_typeshed` doesn't exist at runtime; no point trying to add defaults
 # `antigravity` exists at runtime but it's annoying to have the browser open up every time
 # `this` exists at runtime but results in noisy output being printed to the terminal when imported
 STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi", "this.pyi")
