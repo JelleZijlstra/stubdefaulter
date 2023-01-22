@@ -297,14 +297,15 @@ def main() -> None:
     )
     errors = []
     for module, path in typeshed_client.get_all_stub_files(context):
-        if any(
-            path.relative_to(stdlib_path).match(pattern)
-            for pattern in STDLIB_MODULE_BLACKLIST
-        ):
-            print(f"Skipping {module}: blacklisted module")
-            continue
-        elif stdlib_path is not None and is_relative_to(path, stdlib_path):
-            errors += add_defaults_to_stub(module, context)
+        if stdlib_path is not None and is_relative_to(path, stdlib_path):
+            if any(
+                path.relative_to(stdlib_path).match(pattern)
+                for pattern in STDLIB_MODULE_BLACKLIST
+            ):
+                print(f"Skipping {module}: blacklisted module")
+                continue
+            else:
+                errors += add_defaults_to_stub(module, context)
         elif any(is_relative_to(path, p) for p in package_paths):
             errors += add_defaults_to_stub(module, context)
     sys.exit(1 if errors else 0)
