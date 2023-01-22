@@ -25,7 +25,7 @@ import tomli
 import typeshed_client
 
 
-# Suppress some somewhat noisy logging from the library
+# Suppress some somewhat noisy logging from typeshed_client
 logging.getLogger("typeshed_client").setLevel(logging.CRITICAL)
 
 
