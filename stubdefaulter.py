@@ -64,9 +64,9 @@ class ReplaceEllipses(libcst.CSTTransformer):
             return None
         if param.default is inspect.Parameter.empty:
             return None
-        if isinstance(param.default, bool) or param.default is None:
+        if type(param.default) is bool or param.default is None:
             return libcst.Name(value=str(param.default))
-        elif isinstance(param.default, str):
+        elif type(param.default) is str:
             return libcst.SimpleString(value=repr(param.default))
         elif type(param.default) is int:
             if (
