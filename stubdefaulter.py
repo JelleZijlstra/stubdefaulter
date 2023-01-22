@@ -250,6 +250,12 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
         subprocess.check_call(command)
 
 
+# _typeshed doesn't exist at runtime; no point trying to add defaults
+# `antigravity` exists at runtime but it's annoying to have the browser open up every time
+# `this` exists at runtime but results in noisy output being printed to the terminal when imported
+STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi", "this.pyi")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -291,7 +297,13 @@ def main() -> None:
     )
     errors = []
     for module, path in typeshed_client.get_all_stub_files(context):
-        if stdlib_path is not None and is_relative_to(path, stdlib_path):
+        if any(
+            path.relative_to(stdlib_path).match(pattern)
+            for pattern in STDLIB_MODULE_BLACKLIST
+        ):
+            print(f"Skipping {module}: blacklisted module")
+            continue
+        elif stdlib_path is not None and is_relative_to(path, stdlib_path):
             errors += add_defaults_to_stub(module, context)
         elif any(is_relative_to(path, p) for p in package_paths):
             errors += add_defaults_to_stub(module, context)
