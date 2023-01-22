@@ -8,8 +8,10 @@ Tool to add default values to stubs.
 
 import argparse
 import ast
+import contextlib
 import importlib
 import inspect
+import io
 import subprocess
 import sys
 import textwrap
@@ -160,7 +162,9 @@ def add_defaults_to_stub(
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
     try:
-        runtime_module = importlib.import_module(module_name)
+        # Redirect stdout when importing modules to avoid noisy output from modules like `this`
+        with contextlib.redirect_stdout(io.StringIO()):
+            runtime_module = importlib.import_module(module_name)
     # `importlib.import_module("multiprocessing.popen_fork")` crashes with AttributeError on Windows
     except Exception as e:
         print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
@@ -252,8 +256,7 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
 
 # `_typeshed` doesn't exist at runtime; no point trying to add defaults
 # `antigravity` exists at runtime but it's annoying to have the browser open up every time
-# `this` exists at runtime but results in noisy output being printed to the terminal when imported
-STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi", "this.pyi")
+STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi")
 
 
 def main() -> None:
