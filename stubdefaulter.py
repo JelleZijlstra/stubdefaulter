@@ -22,12 +22,11 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import libcst
 import tomli
-
-# Do this before importing typeshed_client
-# to suppress some somewhat noisy logging from the library
-logging.getLogger("typeshed_client").setLevel(logging.CRITICAL)
-
 import typeshed_client
+
+
+# Suppress some somewhat noisy logging from the library
+logging.getLogger("typeshed_client").setLevel(logging.CRITICAL)
 
 
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
