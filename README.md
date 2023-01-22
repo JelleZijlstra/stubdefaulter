@@ -24,7 +24,6 @@ virtual environment.
 - Example invocations:
   - `python -m stubdefaulter --stdlib-path path/to/typeshed/stdlib`
     - Add defaults to the stdlib stubs in typeshed
-    - Fun things will happen when it tries to add defaults to `antigravity`
   - `python -m stubdefaulter --packages path/to/typeshed/stubs/requests path/to/typeshed/stubs/babel`
     - Add defaults to the `requests` and `babel` packages in typeshed
     - Assumes you already have these installed locally
