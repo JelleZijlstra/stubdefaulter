@@ -161,8 +161,9 @@ def add_defaults_to_stub(
         raise ValueError(f"Could not find stub for {module_name}")
     try:
         runtime_module = importlib.import_module(module_name)
-    except ImportError:
-        print("Could not import", module_name)
+    # `importlib.import_module("multiprocessing.popen_fork")` crashes with AttributeError on Windows
+    except Exception as e:
+        print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return []
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
