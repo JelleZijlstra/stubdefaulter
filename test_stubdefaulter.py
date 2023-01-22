@@ -7,6 +7,7 @@ import typeshed_client
 import stubdefaulter
 
 PY_FILE = """
+import enum
 import re
 
 def f(x=0, y="y", z=True, a=None):
@@ -27,8 +28,15 @@ def overloaded(x=False):
 
 def intenum_default(x=re.ASCII):
     return int(x)
+
+class FooEnum(str, enum.Enum):
+    FOO = "foo"
+
+def strenum_default(x=FooEnum.FOO):
+    return str(x)
 """
 INPUT_STUB = """
+import enum
 import re
 from typing import overload, Literal
 
@@ -49,8 +57,14 @@ def overloaded(x: Literal[False] = ...) -> str: ...
 def overloaded(x: Literal[True]) -> int: ...
 
 def intenum_default(x: int = ...) -> int: ...
+
+class FooEnum(str, enum.Enum):
+    FOO: str
+
+def strenum_default(x: str = ...) -> str: ...
 """
 EXPECTED_STUB = """
+import enum
 import re
 from typing import overload, Literal
 
@@ -71,6 +85,11 @@ def overloaded(x: Literal[False] = ...) -> str: ...
 def overloaded(x: Literal[True]) -> int: ...
 
 def intenum_default(x: int = ...) -> int: ...
+
+class FooEnum(str, enum.Enum):
+    FOO: str
+
+def strenum_default(x: str = ...) -> str: ...
 """
 PKG_NAME = "pkg"
 
