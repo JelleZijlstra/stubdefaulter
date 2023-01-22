@@ -12,6 +12,7 @@ import contextlib
 import importlib
 import inspect
 import io
+import logging
 import subprocess
 import sys
 import textwrap
@@ -21,6 +22,11 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import libcst
 import tomli
+
+# Do this before importing typeshed_client
+# to suppress some somewhat noisy logging from the library
+logging.getLogger("typeshed_client").setLevel(logging.CRITICAL)
+
 import typeshed_client
 
 
@@ -169,8 +175,7 @@ def add_defaults_to_stub(
     except Exception as e:
         print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return []
-    with contextlib.redirect_stderr(io.StringIO()):
-        stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
+    stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text().splitlines()
