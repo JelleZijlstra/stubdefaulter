@@ -93,7 +93,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
             # `-0.0 == +0.0`, but we want to keep the sign,
             # so use the string representation rather than the value itself
             # to determine whether or not it's a negative float
-            if str(param.default).startswith("-"):
+            if math.copysign(1, param.default) < 0:
                 return libcst.UnaryOperation(
                     operator=libcst.Minus(),
                     expression=libcst.Float(value=str(-param.default)),
