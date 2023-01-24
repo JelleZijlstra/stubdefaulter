@@ -33,5 +33,4 @@ virtual environment.
 
 ## Limitations/TODOs
 
-- Does not add float defaults
 - Does not add values to variables and class attributes

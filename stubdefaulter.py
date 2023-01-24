@@ -57,6 +57,14 @@ class ReplaceEllipses(libcst.CSTTransformer):
     num_added: int = 0
     errors: List[Tuple[str, object, object]] = field(default_factory=list)
 
+    @staticmethod
+    def annotation_is_bool(annotation: libcst.Annotation | None) -> bool:
+        return bool(
+            annotation
+            and isinstance(annotation.annotation, libcst.Name)
+            and annotation.annotation.value == "bool"
+        )
+
     def infer_value_for_default(
         self, node: libcst.Param
     ) -> libcst.BaseExpression | None:
@@ -71,11 +79,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
         elif type(param.default) is str:
             return libcst.SimpleString(value=repr(param.default))
         elif type(param.default) is int:
-            if (
-                node.annotation
-                and isinstance(node.annotation.annotation, libcst.Name)
-                and node.annotation.annotation.value == "bool"
-            ):
+            if self.annotation_is_bool(node.annotation):
                 # Skip cases where the type is annotated as bool but the default is an int.
                 return None
             if param.default >= 0:
@@ -85,6 +89,20 @@ class ReplaceEllipses(libcst.CSTTransformer):
                     operator=libcst.Minus(),
                     expression=libcst.Integer(value=str(-param.default)),
                 )
+        elif type(param.default) is float:
+            if self.annotation_is_bool(node.annotation):
+                # Skip cases where the type is annotated as bool but the default is a float.
+                return None
+            # `-0.0 == +0.0`, but we want to keep the sign,
+            # so use the string representation rather than the value itself
+            # to determine whether or not it's a negative float
+            if str(param.default).startswith("-"):
+                return libcst.UnaryOperation(
+                    operator=libcst.Minus(),
+                    expression=libcst.Float(value=str(-param.default)),
+                )
+            else:
+                return libcst.Float(value=str(param.default))
         return None
 
     def leave_Param(
