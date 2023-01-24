@@ -93,6 +93,9 @@ class ReplaceEllipses(libcst.CSTTransformer):
             if self.annotation_is_bool(node.annotation):
                 # Skip cases where the type is annotated as bool but the default is a float.
                 return None
+            if str(param.default) in {"nan", "inf", "-inf"}:
+                # Edge cases that it's probably not worth handling
+                return None
             # `-0.0 == +0.0`, but we want to keep the sign,
             # so use the string representation rather than the value itself
             # to determine whether or not it's a negative float
