@@ -87,7 +87,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
                     expression=libcst.Integer(value=str(-param.default)),
                 )
         elif type(param.default) is float:
-            if math.isnan(param.default) or math.isinf(param.default):
+            if not math.isfinite(param.default):
                 # Edge cases that it's probably not worth handling
                 return None
             # `-0.0 == +0.0`, but we want to keep the sign,
