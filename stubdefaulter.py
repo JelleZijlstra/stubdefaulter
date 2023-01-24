@@ -57,14 +57,6 @@ class ReplaceEllipses(libcst.CSTTransformer):
     num_added: int = 0
     errors: List[Tuple[str, object, object]] = field(default_factory=list)
 
-    @staticmethod
-    def annotation_is_bool(annotation: libcst.Annotation | None) -> bool:
-        return bool(
-            annotation
-            and isinstance(annotation.annotation, libcst.Name)
-            and annotation.annotation.value == "bool"
-        )
-
     def infer_value_for_default(
         self, node: libcst.Param
     ) -> libcst.BaseExpression | None:
@@ -79,7 +71,11 @@ class ReplaceEllipses(libcst.CSTTransformer):
         elif type(param.default) is str:
             return libcst.SimpleString(value=repr(param.default))
         elif type(param.default) is int:
-            if self.annotation_is_bool(node.annotation):
+            if (
+                node.annotation
+                and isinstance(node.annotation.annotation, libcst.Name)
+                and node.annotation.annotation.value == "bool"
+            ):
                 # Skip cases where the type is annotated as bool but the default is an int.
                 return None
             if param.default >= 0:
@@ -90,9 +86,6 @@ class ReplaceEllipses(libcst.CSTTransformer):
                     expression=libcst.Integer(value=str(-param.default)),
                 )
         elif type(param.default) is float:
-            if self.annotation_is_bool(node.annotation):
-                # Skip cases where the type is annotated as bool but the default is a float.
-                return None
             if str(param.default) in {"nan", "inf", "-inf"}:
                 # Edge cases that it's probably not worth handling
                 return None
