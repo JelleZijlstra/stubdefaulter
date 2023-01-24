@@ -91,7 +91,7 @@ class ReplaceEllipses(libcst.CSTTransformer):
                 # Edge cases that it's probably not worth handling
                 return None
             # `-0.0 == +0.0`, but we want to keep the sign,
-            # so use the string representation rather than the value itself
+            # so use math.copysign() rather than a comparison with 0
             # to determine whether or not it's a negative float
             if math.copysign(1, param.default) < 0:
                 return libcst.UnaryOperation(
