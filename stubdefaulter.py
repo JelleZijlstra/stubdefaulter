@@ -12,6 +12,7 @@ import contextlib
 import importlib
 import inspect
 import io
+import math
 import subprocess
 import sys
 import textwrap
@@ -85,6 +86,20 @@ class ReplaceEllipses(libcst.CSTTransformer):
                     operator=libcst.Minus(),
                     expression=libcst.Integer(value=str(-param.default)),
                 )
+        elif type(param.default) is float:
+            if not math.isfinite(param.default):
+                # Edge cases that it's probably not worth handling
+                return None
+            # `-0.0 == +0.0`, but we want to keep the sign,
+            # so use math.copysign() rather than a comparison with 0
+            # to determine whether or not it's a negative float
+            if math.copysign(1, param.default) < 0:
+                return libcst.UnaryOperation(
+                    operator=libcst.Minus(),
+                    expression=libcst.Float(value=str(-param.default)),
+                )
+            else:
+                return libcst.Float(value=str(param.default))
         return None
 
     def leave_Param(
