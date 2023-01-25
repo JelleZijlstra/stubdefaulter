@@ -29,6 +29,8 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
     """Return NotImplemented if we can't infer the value."""
     if isinstance(node, libcst.Integer):
         return int(node.value)
+    elif isinstance(node, libcst.Float):
+        return float(node.value)
     elif isinstance(node, libcst.SimpleString):
         return ast.literal_eval(node.value)
     elif isinstance(node, libcst.Name):
@@ -43,7 +45,7 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
     elif isinstance(node, libcst.UnaryOperation):
         if isinstance(node.operator, libcst.Minus):
             operand = infer_value_of_node(node.expression)
-            if not isinstance(operand, int):
+            if not isinstance(operand, (int, float)):
                 return NotImplemented
             return -operand
         else:
