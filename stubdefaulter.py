@@ -178,7 +178,13 @@ def gather_funcs(
     fullname: str,
     runtime_parent: type | types.ModuleType,
 ) -> Iterator[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]:
-    if not isinstance(node.ast, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+    interesting_classes = (
+        ast.ClassDef,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        typeshed_client.OverloadedName,
+    )
+    if not isinstance(node.ast, interesting_classes):
         return
     try:
         runtime = getattr(runtime_parent, name)
@@ -186,7 +192,9 @@ def gather_funcs(
     except Exception:
         print("Could not find", fullname, "in runtime module")
         return
-    if isinstance(node.ast, ast.ClassDef) and node.child_nodes:
+    if isinstance(node.ast, ast.ClassDef):
+        if not node.child_nodes:
+            return
         for child_name, child_node in node.child_nodes.items():
             yield from gather_funcs(
                 node=child_node,
@@ -194,6 +202,10 @@ def gather_funcs(
                 fullname=f"{fullname}.{child_name}",
                 runtime_parent=runtime,
             )
+    elif isinstance(node.ast, typeshed_client.OverloadedName):
+        for definition in node.ast.definitions:
+            if isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                yield definition, runtime
     elif isinstance(node.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
         yield node.ast, runtime
 
