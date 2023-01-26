@@ -314,6 +314,12 @@ def main() -> None:
         ),
         default=(),
     )
+    parser.add_argument(
+        "-z",
+        "--exit-zero",
+        action="store_true",
+        help="Exit with code 0 even if there were errors.",
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -337,7 +343,7 @@ def main() -> None:
                 errors += add_defaults_to_stub(module, context)
         elif any(is_relative_to(path, p) for p in package_paths):
             errors += add_defaults_to_stub(module, context)
-    sys.exit(1 if errors else 0)
+    sys.exit(1 if (errors and not args.exit_zero) else 0)
 
 
 if __name__ == "__main__":
