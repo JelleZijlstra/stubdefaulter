@@ -1,13 +1,7 @@
 module.exports = async ({ github, context }) => {
   const fs = require('fs')
-  const DIFF_LINE = { ">": true, "<": true }
 
-  let data = fs.readFileSync('errors_diff.txt', { encoding: 'utf8' })
-  // Only keep diff lines
-  data = data
-    .split("\n")
-    .filter(line => line[0] in DIFF_LINE)
-    .join("\n")
+  let data = fs.readFileSync('stubdefaulter_diff.txt', { encoding: 'utf8' })
   // posting comment fails if too long, so truncate
   if (data.length > 30000) {
     let truncated_data = data.substring(0, 30000)
@@ -16,8 +10,8 @@ module.exports = async ({ github, context }) => {
   }
 
   const body = data.trim()
-    ? '⚠ Flake8 diff showing the effect of this PR on typeshed: \n```diff\n' + data + '```'
-    : 'This change has no effect on typeshed. 🤖🎉'
+    ? "⚠ Diff showing the effect of this PR on how stubdefaulter would alter typeshed's stdlib: \n\n<details>\n\n```diff\n" + data + "\n```\n\n</details>"
+    : "This change has no effect on how stubdefaulter would alter typeshed's stdlib. 🤖🎉"
   const issue_number = parseInt(fs.readFileSync("pr_number.txt", { encoding: "utf8" }))
   await github.rest.issues.createComment({
     issue_number,
