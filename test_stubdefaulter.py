@@ -27,6 +27,14 @@ class Capybara:
     def overloaded_method(x=False):
         return 1 if x else "1"
 
+class Klass:
+    class NestedKlass1:
+        class NestedKlass2:
+            def method(self, a=False):
+                pass
+            async def async_method(self, b=3.14):
+                pass
+
 def overloaded(x=False):
     return 1 if x else "1"
 
@@ -57,6 +65,12 @@ class Capybara:
     @overload
     def overloaded_method(x: Literal[True]) -> int: ...
 
+class Klass:
+    class NestedKlass1:
+        class NestedKlass2:
+            def method(self, a: bool = ...) -> None: ...
+            async def async_method(self, b: float = ...) -> None: ...
+
 @overload
 def overloaded(x: Literal[False] = ...) -> str: ...
 @overload
@@ -86,6 +100,12 @@ class Capybara:
     def overloaded_method(x: Literal[False] = ...) -> str: ...
     @overload
     def overloaded_method(x: Literal[True]) -> int: ...
+
+class Klass:
+    class NestedKlass1:
+        class NestedKlass2:
+            def method(self, a: bool = False) -> None: ...
+            async def async_method(self, b: float = 3.14) -> None: ...
 
 @overload
 def overloaded(x: Literal[False] = ...) -> str: ...

@@ -18,7 +18,7 @@ import sys
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import libcst
 import tomli
@@ -171,6 +171,43 @@ def replace_defaults_in_func(
     return visitor.num_added, errors, output_dict
 
 
+FuncList = List[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]
+
+
+def gather_funcs(
+    node_ast: ast.AST | typeshed_client.ImportedName | typeshed_client.OverloadedName,
+    node: typeshed_client.NameInfo,
+    name: str,
+    fullname: str,
+    runtime_parent: Any,
+) -> FuncList:
+    funcs: FuncList = []
+    if isinstance(node_ast, ast.ClassDef) and node.child_nodes:
+        try:
+            runtime_class = getattr(runtime_parent, name)
+        # Some getattr() calls raise TypeError, or something even more exotic
+        except Exception:
+            print("Could not find", fullname, "in runtime module")
+        else:
+            for child_name, child_node in node.child_nodes.items():
+                funcs += gather_funcs(
+                    child_node.ast,
+                    node=child_node,
+                    name=child_name,
+                    fullname=f"{fullname}.{child_name}",
+                    runtime_parent=runtime_class,
+                )
+    elif isinstance(node_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        try:
+            runtime_func = getattr(runtime_parent, name)
+        # Some getattr() calls raise TypeError, or something even more exotic
+        except Exception:
+            print("Could not find", fullname, "in runtime module")
+        else:
+            funcs.append((node_ast, runtime_func))
+    return funcs
+
+
 def add_defaults_to_stub(
     module_name: str, context: typeshed_client.finder.SearchContext
 ) -> list[str]:
@@ -195,30 +232,9 @@ def add_defaults_to_stub(
     total_num_added = 0
     errors = []
     for name, info in stub_names.items():
-        if isinstance(info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            try:
-                runtime_func = getattr(runtime_module, name)
-            except AttributeError:
-                print("Could not find", name, "in runtime module")
-                continue
-            funcs = [(info.ast, runtime_func)]
-        elif isinstance(info.ast, ast.ClassDef) and info.child_nodes:
-            funcs = []
-            try:
-                runtime_class = getattr(runtime_module, name)
-            except AttributeError:
-                print("Could not find", name, "in runtime module")
-                continue
-            for child_name, child_info in info.child_nodes.items():
-                if isinstance(child_info.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    try:
-                        runtime_func = getattr(runtime_class, child_name)
-                    except AttributeError:
-                        print(f"Could not find {name}.{child_name} in runtime module")
-                        continue
-                    funcs.append((child_info.ast, runtime_func))
-        else:
-            funcs = []
+        funcs = gather_funcs(
+            info.ast, node=info, name=name, fullname=name, runtime_parent=runtime_module
+        )
 
         for func, runtime_func in funcs:
             num_added, new_errors, new_lines = replace_defaults_in_func(
