@@ -1,0 +1,74 @@
+name: typeshed_primer
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  typeshed_primer:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stubdefaulter on target branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.base_ref }}
+          path: old_stubdefaulter
+      - name: Checkout stubdefaulter on PR branch
+        uses: actions/checkout@v3
+        with:
+          path: new_stubdefaulter
+      - name: Checkout typeshed
+        uses: actions/checkout@v3
+        with:
+          repository: python/typeshed
+          path: typeshed
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: new_stubdefaulter/pyproject.toml
+      - name: Setup git
+        run: |
+          git config --global user.name stubdefaulter
+          git config --global user.email ''
+      - name: Install stubdefaulter for the target branch
+        run: pip install -e old_stubdefaulter
+      - run: pip freeze --all
+      - name: Run stubdefaulter on the target branch
+        run: |
+          cd typeshed
+          stubdefaulter --stdlib-path stdlib --exit-zero
+          git commit -a -m "With old stubdefaulter"
+      - name: Install stubdefaulter for the PR branch
+        run: pip install -e new_stubdefaulter
+      - name: Run stubdefaulter on PR branch
+        run: |
+          cd typeshed
+          git checkout HEAD~1 -- stdlib
+          git restore --staged stdlib
+          stubdefaulter --stdlib-path stdlib --exit-zero
+      - name: Get the diff between the two stubdefaulter runs
+        run: |
+          cd typeshed
+          git diff | tee ../stubdefaulter_diff.txt
+      - name: Save PR number
+        run: echo ${{ github.event.pull_request.number }} | tee pr_number.txt
+      - name: Upload diff and PR number
+        uses: actions/upload-artifact@v3
+        with:
+          name: typeshed_primer_diff
+          path: |
+            stubdefaulter_diff.txt
+            pr_number.txt

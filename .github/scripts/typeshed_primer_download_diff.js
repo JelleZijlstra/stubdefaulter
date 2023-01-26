@@ -7,7 +7,7 @@ module.exports = async ({ github, context }) => {
     run_id: context.payload.workflow_run.id,
   })
   const [matchArtifact] = artifacts.data.artifacts.filter((artifact) =>
-    artifact.name == "typeshed_primer_errors")
+    artifact.name == "typeshed_primer_diff")
   const download = await github.rest.actions.downloadArtifact({
     owner: context.repo.owner,
     repo: context.repo.repo,
@@ -15,5 +15,5 @@ module.exports = async ({ github, context }) => {
     archive_format: "zip",
   })
 
-  fs.writeFileSync("errors.zip", Buffer.from(download.data));
+  fs.writeFileSync("diff.zip", Buffer.from(download.data));
 }
