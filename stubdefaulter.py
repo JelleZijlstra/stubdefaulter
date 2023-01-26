@@ -175,14 +175,13 @@ FuncList = List[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]
 
 
 def gather_funcs(
-    node_ast: ast.AST | typeshed_client.ImportedName | typeshed_client.OverloadedName,
     node: typeshed_client.NameInfo,
     name: str,
     fullname: str,
     runtime_parent: Any,
 ) -> FuncList:
     funcs: FuncList = []
-    if isinstance(node_ast, ast.ClassDef) and node.child_nodes:
+    if isinstance(node.ast, ast.ClassDef) and node.child_nodes:
         try:
             runtime_class = getattr(runtime_parent, name)
         # Some getattr() calls raise TypeError, or something even more exotic
@@ -191,20 +190,19 @@ def gather_funcs(
         else:
             for child_name, child_node in node.child_nodes.items():
                 funcs += gather_funcs(
-                    child_node.ast,
                     node=child_node,
                     name=child_name,
                     fullname=f"{fullname}.{child_name}",
                     runtime_parent=runtime_class,
                 )
-    elif isinstance(node_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+    elif isinstance(node.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
         try:
             runtime_func = getattr(runtime_parent, name)
         # Some getattr() calls raise TypeError, or something even more exotic
         except Exception:
             print("Could not find", fullname, "in runtime module")
         else:
-            funcs.append((node_ast, runtime_func))
+            funcs.append((node.ast, runtime_func))
     return funcs
 
 
@@ -219,8 +217,11 @@ def add_defaults_to_stub(
         # Redirect stdout when importing modules to avoid noisy output from modules like `this`
         with contextlib.redirect_stdout(io.StringIO()):
             runtime_module = importlib.import_module(module_name)
+    except KeyboardInterrupt:
+        raise
     # `importlib.import_module("multiprocessing.popen_fork")` crashes with AttributeError on Windows
-    except Exception as e:
+    # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
+    except BaseException as e:
         print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return []
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
@@ -233,7 +234,7 @@ def add_defaults_to_stub(
     errors = []
     for name, info in stub_names.items():
         funcs = gather_funcs(
-            info.ast, node=info, name=name, fullname=name, runtime_parent=runtime_module
+            node=info, name=name, fullname=name, runtime_parent=runtime_module
         )
 
         for func, runtime_func in funcs:
