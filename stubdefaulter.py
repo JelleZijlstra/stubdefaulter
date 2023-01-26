@@ -309,7 +309,7 @@ def main() -> None:
         "-z",
         "--exit-zero",
         action="store_true",
-        help="Always exit with code 0, even if there were errors.",
+        help="Exit with code 0 even if there were errors.",
     )
     args = parser.parse_args()
 
