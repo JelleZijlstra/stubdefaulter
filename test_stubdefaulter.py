@@ -32,7 +32,7 @@ class Klass:
         class NestedKlass2:
             def method(self, a=False):
                 pass
-            async def method(self, b=3.14):
+            async def async_method(self, b=3.14):
                 pass
 
 def overloaded(x=False):
@@ -69,7 +69,7 @@ class Klass:
     class NestedKlass1:
         class NestedKlass2:
             def method(self, a: bool = ...) -> None: ...
-            async def method(self, b: float = ...) -> None: ...
+            async def async_method(self, b: float = ...) -> None: ...
 
 @overload
 def overloaded(x: Literal[False] = ...) -> str: ...
@@ -105,7 +105,7 @@ class Klass:
     class NestedKlass1:
         class NestedKlass2:
             def method(self, a: bool = False) -> None: ...
-            async def method(self, b: float = 3.14) -> None: ...
+            async def async_method(self, b: float = 3.14) -> None: ...
 
 @overload
 def overloaded(x: Literal[False] = ...) -> str: ...
