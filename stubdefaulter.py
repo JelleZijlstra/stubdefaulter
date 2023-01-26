@@ -18,7 +18,6 @@ import sys
 import textwrap
 import types
 from dataclasses import dataclass, field
-from functools import singledispatch
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
@@ -176,7 +175,6 @@ def replace_defaults_in_func(
 FuncList = List[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]
 
 
-@singledispatch
 def gather_funcs(
     node_ast: ast.AST | typeshed_client.ImportedName | typeshed_client.OverloadedName,
     node: typeshed_client.NameInfo,
