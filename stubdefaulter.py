@@ -184,52 +184,34 @@ def gather_funcs(
     fullname: str,
     runtime_parent: Any,
 ) -> FuncList:
-    return []
-
-
-@gather_funcs.register(ast.ClassDef)
-def gather_funcs_from_classdef(
-    node_ast: ast.ClassDef,
-    node: typeshed_client.NameInfo,
-    name: str,
-    fullname: str,
-    runtime_parent: types.ModuleType | type,
-) -> FuncList:
-    funcs: FuncList = []
-    if not node.child_nodes:
+    if isinstance(node_ast, ast.ClassDef):
+        funcs: FuncList = []
+        if not node.child_nodes:
+            return funcs
+        try:
+            runtime_class = getattr(runtime_parent, name)
+        except AttributeError:
+            print("Could not find", fullname, "in runtime module")
+        else:
+            for child_name, child_node in node.child_nodes.items():
+                funcs += gather_funcs(
+                    child_node.ast,
+                    node=child_node,
+                    name=child_name,
+                    fullname=f"{fullname}.{child_name}",
+                    runtime_parent=runtime_class,
+                )
         return funcs
-    try:
-        runtime_class = getattr(runtime_parent, name)
-    except AttributeError:
-        print("Could not find", fullname, "in runtime module")
+    elif isinstance(node_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        try:
+            runtime_func = getattr(runtime_parent, name)
+        except AttributeError:
+            print("Could not find", fullname, "in runtime module")
+            return []
+        else:
+            return [(node_ast, runtime_func)]
     else:
-        for child_name, child_node in node.child_nodes.items():
-            funcs += gather_funcs(
-                child_node.ast,
-                node=child_node,
-                name=child_name,
-                fullname=f"{fullname}.{child_name}",
-                runtime_parent=runtime_class,
-            )
-    return funcs
-
-
-@gather_funcs.register(ast.FunctionDef)
-@gather_funcs.register(ast.AsyncFunctionDef)
-def gather_funcs_from_funcdef(
-    node_ast: ast.FunctionDef | ast.AsyncFunctionDef,
-    node: typeshed_client.NameInfo,
-    name: str,
-    fullname: str,
-    runtime_parent: types.ModuleType | type,
-) -> FuncList:
-    try:
-        runtime_func = getattr(runtime_parent, name)
-    except AttributeError:
-        print("Could not find", fullname, "in runtime module")
         return []
-    else:
-        return [(node_ast, runtime_func)]
 
 
 def add_defaults_to_stub(
