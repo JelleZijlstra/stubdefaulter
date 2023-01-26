@@ -185,7 +185,8 @@ def gather_funcs(
     if isinstance(node_ast, ast.ClassDef) and node.child_nodes:
         try:
             runtime_class = getattr(runtime_parent, name)
-        except AttributeError:
+        # Some getattr() calls raise TypeError, or something even more exotic
+        except Exception:
             print("Could not find", fullname, "in runtime module")
         else:
             for child_name, child_node in node.child_nodes.items():
@@ -199,7 +200,8 @@ def gather_funcs(
     elif isinstance(node_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
         try:
             runtime_func = getattr(runtime_parent, name)
-        except AttributeError:
+        # Some getattr() calls raise TypeError, or something even more exotic
+        except Exception:
             print("Could not find", fullname, "in runtime module")
         else:
             funcs.append((node_ast, runtime_func))
