@@ -181,10 +181,8 @@ def gather_funcs(
     fullname: str,
     runtime_parent: Any,
 ) -> FuncList:
-    if isinstance(node_ast, ast.ClassDef):
-        funcs: FuncList = []
-        if not node.child_nodes:
-            return funcs
+    funcs: FuncList = []
+    if isinstance(node_ast, ast.ClassDef) and node.child_nodes:
         try:
             runtime_class = getattr(runtime_parent, name)
         except AttributeError:
@@ -198,17 +196,14 @@ def gather_funcs(
                     fullname=f"{fullname}.{child_name}",
                     runtime_parent=runtime_class,
                 )
-        return funcs
     elif isinstance(node_ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
         try:
             runtime_func = getattr(runtime_parent, name)
         except AttributeError:
             print("Could not find", fullname, "in runtime module")
-            return []
         else:
-            return [(node_ast, runtime_func)]
-    else:
-        return []
+            funcs.append((node_ast, runtime_func))
+    return funcs
 
 
 def add_defaults_to_stub(
