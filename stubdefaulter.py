@@ -55,11 +55,14 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
         return NotImplemented
 
 
+ErrorTuple = Tuple[str, object, object]
+
+
 @dataclass
 class ReplaceEllipses(libcst.CSTTransformer):
     sig: inspect.Signature
     num_added: int = 0
-    errors: List[Tuple[str, object, object]] = field(default_factory=list)
+    errors: List[ErrorTuple] = field(default_factory=list)
 
     def infer_value_for_default(
         self, node: libcst.Param
@@ -130,7 +133,72 @@ class ReplaceEllipses(libcst.CSTTransformer):
             return updated_node
 
 
-def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+@dataclass
+class AddDefaultToVariable(libcst.CSTTransformer):
+    runtime: object
+    num_added: int = 0
+    errors: List[ErrorTuple] = field(default_factory=list)
+
+    def infer_value_for_variable(self) -> libcst.BaseExpression | None:
+        if type(self.runtime) is bool or self.runtime is None:
+            return libcst.Name(value=str(self.runtime))
+        if type(self.runtime) is str:
+            return libcst.SimpleString(value=repr(self.runtime))
+        if type(self.runtime) is int:
+            assert isinstance(self.runtime, int)
+            if self.runtime >= 0:
+                return libcst.Integer(value=str(self.runtime))
+            else:
+                return libcst.UnaryOperation(
+                    operator=libcst.Minus(),
+                    expression=libcst.Integer(value=str(-self.runtime)),
+                )
+        if type(self.runtime) is float:
+            assert isinstance(self.runtime, float)
+            if not math.isfinite(self.runtime):
+                # Edge cases that it's probably not worth handling
+                return None
+            # `-0.0 == +0.0`, but we want to keep the sign,
+            # so use math.copysign() rather than a comparison with 0
+            # to determine whether or not it's a negative float
+            if math.copysign(1, self.runtime) < 0:
+                return libcst.UnaryOperation(
+                    operator=libcst.Minus(),
+                    expression=libcst.Float(value=str(-self.runtime)),
+                )
+            else:
+                return libcst.Float(value=str(self.runtime))
+        return None
+
+    def leave_AnnAssign(
+        self, original_node: libcst.AnnAssign, updated_node: libcst.AnnAssign
+    ) -> libcst.AnnAssign:
+        if not isinstance(original_node.target, libcst.Name):
+            return updated_node
+        inferred_default = self.infer_value_for_variable()
+        if inferred_default is None:
+            return updated_node
+        if (
+            isinstance(original_node.value, libcst.Ellipsis)
+            or original_node.value is None
+        ):
+            self.num_added += 1
+            return updated_node.with_changes(value=inferred_default)
+        else:
+            existing_value = infer_value_of_node(original_node.value)
+            if existing_value is NotImplemented:
+                return updated_node
+            inferred_value = infer_value_of_node(inferred_default)
+            if existing_value != inferred_value or type(inferred_value) is not type(
+                existing_value
+            ):
+                self.errors.append(
+                    (original_node.target.value, existing_value, inferred_value)
+                )
+            return updated_node
+
+
+def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.AnnAssign) -> int:
     if sys.version_info >= (3, 8):
         assert hasattr(node, "end_lineno")
         assert node.end_lineno is not None
@@ -172,17 +240,40 @@ def replace_defaults_in_func(
     return visitor.num_added, errors, output_dict
 
 
-def gather_funcs(
+def add_defaults_to_variable(
+    stub_lines: list[str], node: ast.AnnAssign, runtime_object: object
+) -> tuple[int, list[str], dict[int, list[str]]]:
+    end_lineno = get_end_lineno(node)
+    lines = stub_lines[node.lineno - 1 : end_lineno]
+    indentation = len(lines[0]) - len(lines[0].lstrip())
+    cst = libcst.parse_statement(textwrap.dedent("".join(line + "\n" for line in lines)))
+    visitor = AddDefaultToVariable(runtime_object)
+    modified = cst.visit(visitor)
+    assert isinstance(modified, libcst.SimpleStatementLine)
+    new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
+    output_dict = {node.lineno - 1: new_code.splitlines()}
+    for i in range(node.lineno, end_lineno):
+        output_dict[i] = []
+    errors = [
+        f"Variable {var_name}: stub default {stub_default!r} != runtime default {runtime_default!r}"
+        for var_name, stub_default, runtime_default in visitor.errors
+    ]
+    return visitor.num_added, errors, output_dict
+
+
+def gather_nodes(
     node: typeshed_client.NameInfo,
     name: str,
     fullname: str,
     runtime_parent: type | types.ModuleType,
-) -> Iterator[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]:
+    class_nesting: int = 0,
+) -> Iterator[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.AnnAssign], Any]]:
     interesting_classes = (
         ast.ClassDef,
         ast.FunctionDef,
         ast.AsyncFunctionDef,
         typeshed_client.OverloadedName,
+        ast.AnnAssign,
     )
     if not isinstance(node.ast, interesting_classes):
         return
@@ -196,17 +287,20 @@ def gather_funcs(
         if not node.child_nodes:
             return
         for child_name, child_node in node.child_nodes.items():
-            yield from gather_funcs(
+            yield from gather_nodes(
                 node=child_node,
                 name=child_name,
                 fullname=f"{fullname}.{child_name}",
                 runtime_parent=runtime,
+                class_nesting=class_nesting + 1,
             )
     elif isinstance(node.ast, typeshed_client.OverloadedName):
         for definition in node.ast.definitions:
             if isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 yield definition, runtime
     elif isinstance(node.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        yield node.ast, runtime
+    elif isinstance(node.ast, ast.AnnAssign) and class_nesting == 0:
         yield node.ast, runtime
 
 
@@ -237,14 +331,19 @@ def add_defaults_to_stub(
     total_num_added = 0
     errors = []
     for name, info in stub_names.items():
-        funcs = gather_funcs(
+        gathered_nodes = gather_nodes(
             node=info, name=name, fullname=name, runtime_parent=runtime_module
         )
 
-        for func, runtime_func in funcs:
-            num_added, new_errors, new_lines = replace_defaults_in_func(
-                stub_lines, func, runtime_func
-            )
+        for node, runtime in gathered_nodes:
+            if isinstance(node, ast.AnnAssign):
+                num_added, new_errors, new_lines = add_defaults_to_variable(
+                    stub_lines, node, runtime
+                )
+            else:
+                num_added, new_errors, new_lines = replace_defaults_in_func(
+                    stub_lines, node, runtime
+                )
             for error in new_errors:
                 message = f"{module_name}.{name}: {error}"
                 errors.append(message)

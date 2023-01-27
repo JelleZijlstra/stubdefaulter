@@ -9,6 +9,16 @@ import stubdefaulter
 PY_FILE = """
 import enum
 import re
+import sys
+
+A = 0
+B = 'foo'
+C = True
+D = 5
+if sys.version_info >= (3, 5):
+    # A test for indented constants:
+    E = 'foo'
+    F = False
 
 def f(x=0, y="y", z=True, a=None):
     pass
@@ -50,7 +60,17 @@ def strenum_default(x=FooEnum.FOO):
 INPUT_STUB = """
 import enum
 import re
+import sys
 from typing import overload, Literal
+
+A: int
+B: str
+C: bool
+D: int = ...
+if sys.version_info >= (3, 5):
+    # A test for indented constants:
+    E: str = ...
+    F: bool = ...
 
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
 def more_ints(x: int = ..., y: bool = ...) -> None: ...
@@ -86,7 +106,17 @@ def strenum_default(x: str = ...) -> str: ...
 EXPECTED_STUB = """
 import enum
 import re
+import sys
 from typing import overload, Literal
+
+A: int = 0
+B: str = 'foo'
+C: bool = True
+D: int = 5
+if sys.version_info >= (3, 5):
+    # A test for indented constants:
+    E: str = 'foo'
+    F: bool = False
 
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
 def more_ints(x: int = -1, y: bool = ...) -> None: ...
