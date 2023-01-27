@@ -246,7 +246,9 @@ def add_defaults_to_variable(
     end_lineno = get_end_lineno(node)
     lines = stub_lines[node.lineno - 1 : end_lineno]
     indentation = len(lines[0]) - len(lines[0].lstrip())
-    cst = libcst.parse_statement(textwrap.dedent("".join(line + "\n" for line in lines)))
+    cst = libcst.parse_statement(
+        textwrap.dedent("".join(line + "\n" for line in lines))
+    )
     visitor = AddDefaultToVariable(runtime_object)
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.SimpleStatementLine)
