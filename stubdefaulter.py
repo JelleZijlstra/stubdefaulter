@@ -25,6 +25,21 @@ import libcst
 import tomli
 import typeshed_client
 
+try:
+    from termcolor import colored
+except ImportError:
+
+    def colored(text: str, color: str = "") -> str:  # type: ignore[misc]
+        return text
+
+
+def log(*objects: object) -> None:
+    print(colored(" ".join(map(str, objects)), "yellow"))
+
+
+def warn(*objects: object) -> None:
+    print(colored(" ".join(map(str, objects)), "red"))
+
 
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
     """Return NotImplemented if we can't infer the value."""
@@ -190,7 +205,7 @@ def gather_funcs(
         runtime = getattr(runtime_parent, name)
     # Some getattr() calls raise TypeError, or something even more exotic
     except Exception:
-        print("Could not find", fullname, "in runtime module")
+        log("Could not find", fullname, "in runtime module")
         return
     if isinstance(node.ast, ast.ClassDef):
         if not node.child_nodes:
@@ -226,7 +241,7 @@ def add_defaults_to_stub(
     # `importlib.import_module("multiprocessing.popen_fork")` crashes with AttributeError on Windows
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
-        print(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
+        log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return []
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
@@ -248,7 +263,7 @@ def add_defaults_to_stub(
             for error in new_errors:
                 message = f"{module_name}.{name}: {error}"
                 errors.append(message)
-                print(message)
+                warn(message)
             replacement_lines.update(new_lines)
             total_num_added += num_added
     with path.open("w") as f:
@@ -280,7 +295,7 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
     for path in typeshed_paths:
         metadata_path = path / "METADATA.toml"
         if not metadata_path.exists():
-            print(f"{path} does not look like a typeshed package", file=sys.stderr)
+            warn(f"{path} does not look like a typeshed package", file=sys.stderr)
             sys.exit(1)
         metadata_bytes = metadata_path.read_text()
         metadata = tomli.loads(metadata_bytes)
@@ -349,7 +364,7 @@ def main() -> None:
                 path.relative_to(stdlib_path).match(pattern)
                 for pattern in STDLIB_MODULE_BLACKLIST
             ):
-                print(f"Skipping {module}: blacklisted module")
+                log(f"Skipping {module}: blacklisted module")
                 continue
             else:
                 errors += add_defaults_to_stub(module, context)
