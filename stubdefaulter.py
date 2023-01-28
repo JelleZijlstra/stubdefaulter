@@ -295,7 +295,7 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
     for path in typeshed_paths:
         metadata_path = path / "METADATA.toml"
         if not metadata_path.exists():
-            warn(f"{path} does not look like a typeshed package", file=sys.stderr)
+            print(f"{path} does not look like a typeshed package", file=sys.stderr)
             sys.exit(1)
         metadata_bytes = metadata_path.read_text()
         metadata = tomli.loads(metadata_bytes)
