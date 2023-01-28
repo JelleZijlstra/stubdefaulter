@@ -38,3 +38,4 @@ repos:
         additional_dependencies:
           - types-requests
           - aiohttp
+          - termcolor
