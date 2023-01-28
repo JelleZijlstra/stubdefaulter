@@ -26,6 +26,7 @@ import tomli
 import typeshed_client
 from termcolor import colored
 
+
 def log(*objects: object) -> None:
     print(colored(" ".join(map(str, objects)), "yellow"))
 
