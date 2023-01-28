@@ -37,10 +37,6 @@ def log(*objects: object) -> None:
     print(colored(" ".join(map(str, objects)), "yellow"))
 
 
-def warn(*objects: object) -> None:
-    print(colored(" ".join(map(str, objects)), "red"))
-
-
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
     """Return NotImplemented if we can't infer the value."""
     if isinstance(node, libcst.Integer):
@@ -263,7 +259,7 @@ def add_defaults_to_stub(
             for error in new_errors:
                 message = f"{module_name}.{name}: {error}"
                 errors.append(message)
-                warn(message)
+                print(colored(message, "red"))
             replacement_lines.update(new_lines)
             total_num_added += num_added
     with path.open("w") as f:
