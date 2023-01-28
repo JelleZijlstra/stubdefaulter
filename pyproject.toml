@@ -14,7 +14,7 @@ stubdefaulter = "stubdefaulter:main"
 
 [project.optional-dependencies]
 colors = ["termcolor>=2"]
-pyanalyze = ["stubdefaulter[colors]" "pyanalyze==0.9.0"]
+pyanalyze = ["stubdefaulter[colors]", "pyanalyze==0.9.0"]
 dev = [
     "stubdefaulter[pyanalyze]",
     "black==22.12.0",            # Must match .pre-commit-config.yaml
