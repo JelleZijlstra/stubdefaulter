@@ -24,14 +24,7 @@ from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
 import libcst
 import tomli
 import typeshed_client
-
-try:
-    from termcolor import colored
-except ImportError:
-
-    def colored(text: str, color: str = "") -> str:  # type: ignore[misc]
-        return text
-
+from termcolor import colored
 
 def log(*objects: object) -> None:
     print(colored(" ".join(map(str, objects)), "yellow"))
