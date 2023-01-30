@@ -360,6 +360,12 @@ def main() -> None:
                 errors += add_defaults_to_stub(module, context)
         elif any(is_relative_to(path, p) for p in package_paths):
             errors += add_defaults_to_stub(module, context)
+    if errors:
+        message = f"\n--- Exit status 1: encountered {len(errors)} errors ---"
+        print(colored(message, "red"))
+    else:
+        message = "\n--- Exit status 0: no errors encountered ---"
+        print(colored(message, "green"))
     sys.exit(1 if (errors and not args.exit_zero) else 0)
 
 
