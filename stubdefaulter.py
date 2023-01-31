@@ -192,7 +192,10 @@ def gather_funcs(
     if not isinstance(node.ast, interesting_classes):
         return
     try:
-        runtime = getattr(runtime_parent, name)
+        try:
+            runtime = getattr(runtime_parent, name)
+        except AttributeError:
+            runtime = inspect.getattr_static(runtime_parent, name)
     # Some getattr() calls raise TypeError, or something even more exotic
     except Exception:
         log("Could not find", fullname, "in runtime module")
