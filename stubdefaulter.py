@@ -220,7 +220,7 @@ def gather_funcs(
 
 def add_defaults_to_stub(
     module_name: str, context: typeshed_client.finder.SearchContext
-) -> list[str]:
+) -> tuple[list[str], int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
@@ -235,7 +235,7 @@ def add_defaults_to_stub(
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
         log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
-        return []
+        return [], 0
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -267,7 +267,7 @@ def add_defaults_to_stub(
             else:
                 f.write(line + "\n")
     print(f"added {total_num_added} defaults")
-    return errors
+    return errors, total_num_added
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -351,6 +351,7 @@ def main() -> None:
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
     errors = []
+    total_num_added = 0
     for module, path in typeshed_client.get_all_stub_files(context):
         if stdlib_path is not None and is_relative_to(path, stdlib_path):
             if any(
@@ -360,15 +361,15 @@ def main() -> None:
                 log(f"Skipping {module}: blacklisted module")
                 continue
             else:
-                errors += add_defaults_to_stub(module, context)
+                these_errors, num_added = add_defaults_to_stub(module, context)
+                errors += these_errors
+                total_num_added += num_added
         elif any(is_relative_to(path, p) for p in package_paths):
-            errors += add_defaults_to_stub(module, context)
-    if errors:
-        message = f"\n--- Encountered {len(errors)} errors ---"
-        print(colored(message, "red"))
-    else:
-        message = "\n--- No errors encountered ---"
-        print(colored(message, "green"))
+            these_errors, num_added = add_defaults_to_stub(module, context)
+            errors += these_errors
+            total_num_added += num_added
+    m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
+    print(colored(m, "red" if errors else "green"))
     sys.exit(1 if (errors and not args.exit_zero) else 0)
 
 
