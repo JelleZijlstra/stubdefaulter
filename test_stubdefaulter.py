@@ -30,6 +30,8 @@ class Capybara:
         pass
     def overloaded_method(x=False):
         return 1 if x else "1"
+    def __mangled(x="foo"):
+        pass
 
 class Klass:
     class NestedKlass1:
@@ -73,6 +75,7 @@ class Capybara:
     def overloaded_method(x: Literal[False] = ...) -> str: ...
     @overload
     def overloaded_method(x: Literal[True]) -> int: ...
+    def __mangled(x: str = ...) -> None: ...
 
 class Klass:
     class NestedKlass1:
@@ -112,6 +115,7 @@ class Capybara:
     def overloaded_method(x: Literal[False] = False) -> str: ...
     @overload
     def overloaded_method(x: Literal[True]) -> int: ...
+    def __mangled(x: str = 'foo') -> None: ...
 
 class Klass:
     class NestedKlass1:
