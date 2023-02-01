@@ -48,6 +48,9 @@ class FooEnum(str, enum.Enum):
 
 def strenum_default(x=FooEnum.FOO):
     return str(x)
+
+def pos_only(x=5):
+    pass
 """
 INPUT_STUB = """
 import enum
@@ -85,6 +88,7 @@ class FooEnum(str, enum.Enum):
     FOO: str
 
 def strenum_default(x: str = ...) -> str: ...
+def pos_only(__x: int = ...) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
@@ -122,6 +126,7 @@ class FooEnum(str, enum.Enum):
     FOO: str
 
 def strenum_default(x: str = ...) -> str: ...
+def pos_only(__x: int = 5) -> None: ...
 """
 PKG_NAME = "pkg"
 
