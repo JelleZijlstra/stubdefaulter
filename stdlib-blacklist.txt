@@ -16,6 +16,11 @@ pydoc.Doc.getdocloc
 sysconfig.get_path
 sysconfig.get_paths
 
+# We're deliberately telling white lies about the default values for these in typeshed
+# See discussion in https://github.com/python/typeshed/pull/9637
+tkinter.Tk.__init__
+tkinter.Tcl
+
 # `inspect.signature()` gives `None` as the default value for all optional parameters,
 # but passing `None` in fails at runtime.
 # The true "default value" is inexpressible.
