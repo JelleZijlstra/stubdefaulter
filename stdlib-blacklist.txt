@@ -1,0 +1,35 @@
+# The default value of the `mode` parameter varies depending on your OS
+ctypes.CDLL.__init__
+
+# The default value of the `category` parameter depends
+# on whether the `_locale` module (and/or an ANSI C locale implementation)
+# is available
+locale.getlocale
+locale.resetlocale
+
+# The default value for `basedir` is dynamically calculated
+# based on the specific directory the Python executable is found in
+pydoc.Doc.getdocloc
+
+# The default value for the `scheme` parameter will vary
+# depending on the precise kind of operating system you're running
+sysconfig.get_path
+sysconfig.get_paths
+
+# `inspect.signature()` gives `None` as the default value for all optional parameters,
+# but passing `None` in fails at runtime.
+# The true "default value" is inexpressible.
+types.CodeType.replace
+
+# The default value for the `stop` parameter of `collections.abc.Sequence` is `None`,
+# but we'd have to add many `type: ignore`s to typeshed, for little gain,
+# if we added that to the stub.
+# (Most real-world sequences don't allow `None` to be passed in.)
+# https://github.com/python/typeshed/pull/9625
+typing.Sequence.index
+
+# TODO: fix these in typeshed: https://github.com/python/typeshed/issues/9652
+asyncio.base_events.BaseEventLoop.create_connection
+asyncio.base_events.BaseEventLoop.create_server
+asyncio.events.AbstractEventLoop.create_connection
+asyncio.events.AbstractEventLoop.create_server
