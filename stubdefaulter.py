@@ -20,7 +20,7 @@ import types
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
 
 import libcst
 import tomli
