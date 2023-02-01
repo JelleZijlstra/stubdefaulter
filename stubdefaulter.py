@@ -18,8 +18,9 @@ import sys
 import textwrap
 import types
 from dataclasses import dataclass, field
+from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Sequence, Tuple, Union
 
 import libcst
 import tomli
@@ -178,7 +179,11 @@ def gather_funcs(
     name: str,
     fullname: str,
     runtime_parent: type | types.ModuleType,
+    blacklisted_objects: frozenset[str],
 ) -> Iterator[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]:
+    if fullname in blacklisted_objects:
+        log(f"Skipping {fullname}: blacklisted object")
+        return
     interesting_classes = (
         ast.ClassDef,
         ast.FunctionDef,
@@ -194,7 +199,7 @@ def gather_funcs(
             runtime = inspect.getattr_static(runtime_parent, name)
     # Some getattr() calls raise TypeError, or something even more exotic
     except Exception:
-        log("Could not find", fullname, "in runtime module")
+        log("Could not find", fullname, "at runtime")
         return
     if isinstance(node.ast, ast.ClassDef):
         if not node.child_nodes:
@@ -205,6 +210,7 @@ def gather_funcs(
                 name=child_name,
                 fullname=f"{fullname}.{child_name}",
                 runtime_parent=runtime,
+                blacklisted_objects=blacklisted_objects,
             )
     elif isinstance(node.ast, typeshed_client.OverloadedName):
         for definition in node.ast.definitions:
@@ -215,7 +221,9 @@ def gather_funcs(
 
 
 def add_defaults_to_stub(
-    module_name: str, context: typeshed_client.finder.SearchContext
+    module_name: str,
+    context: typeshed_client.finder.SearchContext,
+    blacklisted_objects: frozenset[str],
 ) -> tuple[list[str], int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     path = typeshed_client.get_stub_file(module_name, search_context=context)
@@ -242,7 +250,11 @@ def add_defaults_to_stub(
     errors = []
     for name, info in stub_names.items():
         funcs = gather_funcs(
-            node=info, name=name, fullname=name, runtime_parent=runtime_module
+            node=info,
+            name=name,
+            fullname=f"{module_name}.{name}",
+            runtime_parent=runtime_module,
+            blacklisted_objects=blacklisted_objects,
         )
 
         for func, runtime_func in funcs:
@@ -296,9 +308,19 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
         subprocess.check_call(command)
 
 
+# A hardcoded list of stdlib modules to skip
+# This is separate to the --blacklists argument on the command line,
+# which is for individual functions/methods/variables to skip
+#
 # `_typeshed` doesn't exist at runtime; no point trying to add defaults
 # `antigravity` exists at runtime but it's annoying to have the browser open up every time
 STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi")
+
+
+def load_blacklist(path: Path) -> frozenset[str]:
+    with path.open() as f:
+        entries = frozenset(line.split("#")[0].strip() for line in f)
+    return entries - {""}
 
 
 def main() -> None:
@@ -331,6 +353,18 @@ def main() -> None:
         default=(),
     )
     parser.add_argument(
+        "-b",
+        "--blacklists",
+        nargs="+",
+        help=(
+            "List of paths pointing to 'blacklist files',"
+            " which can be used to specify functions that stubdefaulter should skip"
+            " trying to add default values to. Note: if the name of a class is included"
+            " in a blacklist, the whole class will be skipped."
+        ),
+        default=(),
+    )
+    parser.add_argument(
         "-z",
         "--exit-zero",
         action="store_true",
@@ -342,7 +376,13 @@ def main() -> None:
     typeshed_paths = [Path(p) for p in args.typeshed_packages]
     install_typeshed_packages(typeshed_paths)
     package_paths = [Path(p) for p in args.packages] + typeshed_paths
+    stdlib_blacklist_path = Path(__file__).parent / "stdlib-blacklist.txt"
+    assert stdlib_blacklist_path.exists() and stdlib_blacklist_path.is_file()
+    blacklist_paths = [Path(p) for p in args.blacklists] + [stdlib_blacklist_path]
 
+    combined_blacklist = frozenset(
+        chain.from_iterable(load_blacklist(path) for path in blacklist_paths)
+    )
     context = typeshed_client.finder.get_search_context(
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
@@ -357,11 +397,15 @@ def main() -> None:
                 log(f"Skipping {module}: blacklisted module")
                 continue
             else:
-                these_errors, num_added = add_defaults_to_stub(module, context)
+                these_errors, num_added = add_defaults_to_stub(
+                    module, context, combined_blacklist
+                )
                 errors += these_errors
                 total_num_added += num_added
         elif any(is_relative_to(path, p) for p in package_paths):
-            these_errors, num_added = add_defaults_to_stub(module, context)
+            these_errors, num_added = add_defaults_to_stub(
+                module, context, combined_blacklist
+            )
             errors += these_errors
             total_num_added += num_added
     m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
