@@ -210,9 +210,13 @@ def gather_funcs(
         if not node.child_nodes:
             return
         for child_name, child_node in node.child_nodes.items():
+            if child_name.startswith("__") and not child_name.endswith("__"):
+                maybe_mangled_child_name = f"_{name}{child_name}"
+            else:
+                maybe_mangled_child_name = child_name
             yield from gather_funcs(
                 node=child_node,
-                name=child_name,
+                name=maybe_mangled_child_name,
                 fullname=f"{fullname}.{child_name}",
                 runtime_parent=runtime,
                 blacklisted_objects=blacklisted_objects,
