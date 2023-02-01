@@ -66,9 +66,14 @@ class ReplaceEllipses(libcst.CSTTransformer):
     def infer_value_for_default(
         self, node: libcst.Param
     ) -> libcst.BaseExpression | None:
+        param_name = node.name.value
+        param: inspect.Parameter | None = None
         try:
-            param = self.sig.parameters[node.name.value]
+            param = self.sig.parameters[param_name]
         except KeyError:
+            if param_name.startswith("__") and not param_name.endswith("__"):
+                param = self.sig.parameters.get(param_name[2:])
+        if not isinstance(param, inspect.Parameter):
             return None
         if param.default is inspect.Parameter.empty:
             return None
