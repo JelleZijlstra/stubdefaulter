@@ -34,7 +34,7 @@ def log(*objects: object) -> None:
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
     """Return NotImplemented if we can't infer the value."""
     if isinstance(node, libcst.Integer):
-        return int(node.value)
+        return int(node.value, 0)
     elif isinstance(node, libcst.Float):
         return float(node.value)
     elif isinstance(node, libcst.SimpleString):
