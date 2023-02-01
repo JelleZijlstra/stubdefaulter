@@ -140,7 +140,7 @@ def test_stubdefaulter() -> None:
         errors, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
-            frozenset()
+            frozenset(),
         )
         assert stub_path.read_text() == EXPECTED_STUB
         assert len(errors) == 1
@@ -149,7 +149,7 @@ def test_stubdefaulter() -> None:
         errors, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
-            frozenset()
+            frozenset(),
         )
         assert stub_path.read_text() == EXPECTED_STUB.replace(
             "wrong: int = 1", "wrong: int = 0"
