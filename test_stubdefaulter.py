@@ -138,14 +138,18 @@ def test_stubdefaulter() -> None:
         (pkg_path / "py.typed").write_text("typed\n")
 
         errors, _ = stubdefaulter.add_defaults_to_stub(
-            PKG_NAME, typeshed_client.finder.get_search_context(search_path=[td])
+            PKG_NAME,
+            typeshed_client.finder.get_search_context(search_path=[td]),
+            frozenset()
         )
         assert stub_path.read_text() == EXPECTED_STUB
         assert len(errors) == 1
 
         stub_path.write_text(INPUT_STUB.replace(" = 1", " = ..."))
         errors, _ = stubdefaulter.add_defaults_to_stub(
-            PKG_NAME, typeshed_client.finder.get_search_context(search_path=[td])
+            PKG_NAME,
+            typeshed_client.finder.get_search_context(search_path=[td]),
+            frozenset()
         )
         assert stub_path.read_text() == EXPECTED_STUB.replace(
             "wrong: int = 1", "wrong: int = 0"
