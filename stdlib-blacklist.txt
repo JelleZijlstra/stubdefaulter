@@ -7,6 +7,9 @@ ctypes.CDLL.__init__
 locale.getlocale
 locale.resetlocale
 
+# The default value for `size` is system-dependent.
+multiprocessing.heap.Heap
+
 # The default value for `basedir` is dynamically calculated
 # based on the specific directory the Python executable is found in
 pydoc.Doc.getdocloc
