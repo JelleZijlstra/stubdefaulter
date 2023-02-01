@@ -9,7 +9,6 @@ import stubdefaulter
 PY_FILE = """
 import enum
 import re
-import sys
 
 def f(x=0, y="y", z=True, a=None):
     pass
@@ -50,14 +49,12 @@ class FooEnum(str, enum.Enum):
 def strenum_default(x=FooEnum.FOO):
     return str(x)
 
-if sys.version_info >= (3, 8):
-    def pos_only(x=5):
-        pass
+def pos_only(x=5):
+    pass
 """
 INPUT_STUB = """
 import enum
 import re
-import sys
 from typing import overload, Literal
 
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
@@ -91,14 +88,11 @@ class FooEnum(str, enum.Enum):
     FOO: str
 
 def strenum_default(x: str = ...) -> str: ...
-
-if sys.version_info >= (3, 8):
-    def pos_only(__x: int = ...) -> None: ...
+def pos_only(__x: int = ...) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
 import re
-import sys
 from typing import overload, Literal
 
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
@@ -132,9 +126,7 @@ class FooEnum(str, enum.Enum):
     FOO: str
 
 def strenum_default(x: str = ...) -> str: ...
-
-if sys.version_info >= (3, 8):
-    def pos_only(__x: int = 5) -> None: ...
+def pos_only(__x: int = 5) -> None: ...
 """
 PKG_NAME = "pkg"
 
