@@ -51,7 +51,7 @@ def strenum_default(x=FooEnum.FOO):
     return str(x)
 
 if sys.version_info >= (3, 8):
-    def pos_only(x=5, /):
+    def pos_only(x=5):
         pass
 """
 INPUT_STUB = """
