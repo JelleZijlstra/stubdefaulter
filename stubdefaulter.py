@@ -379,8 +379,7 @@ def main() -> None:
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
     if stdlib_path is not None:
-        versions_path = stdlib_path / "VERSIONS"
-        if not (stdlib_path.is_dir() and versions_path.is_file()):
+        if not (stdlib_path.is_dir() and (stdlib_path / "VERSIONS").is_file()):
             parser.error(f'"{stdlib_path}" does not point to a valid stdlib directory')
 
     typeshed_paths = [Path(p) for p in args.typeshed_packages]
