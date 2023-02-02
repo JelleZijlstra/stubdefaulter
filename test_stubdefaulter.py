@@ -42,6 +42,10 @@ class Klass:
                 pass
             async def async_method(self, b=3.14):
                 pass
+    class __Mangled1:
+        class __Mangled2:
+            def __mangled(self, x=True):
+                pass
 
 def overloaded(x=False):
     return 1 if x else "1"
@@ -84,6 +88,9 @@ class Klass:
         class NestedKlass2:
             def method(self, a: bool = ...) -> None: ...
             async def async_method(self, b: float = ...) -> None: ...
+    class __Mangled1:
+        class __Mangled2:
+            def __mangled(self, x: bool = ...) -> None: ...
 
 @overload
 def overloaded(x: Literal[False] = ...) -> str: ...
@@ -124,6 +131,9 @@ class Klass:
         class NestedKlass2:
             def method(self, a: bool = False) -> None: ...
             async def async_method(self, b: float = 3.14) -> None: ...
+    class __Mangled1:
+        class __Mangled2:
+            def __mangled(self, x: bool = True) -> None: ...
 
 @overload
 def overloaded(x: Literal[False] = False) -> str: ...

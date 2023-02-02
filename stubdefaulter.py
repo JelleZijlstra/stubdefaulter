@@ -215,7 +215,10 @@ def gather_funcs(
             return
         for child_name, child_node in node.child_nodes.items():
             if child_name.startswith("__") and not child_name.endswith("__"):
-                maybe_mangled_child_name = f"_{name}{child_name}"
+                unmangled_parent_name = fullname.split(".")[-1]
+                maybe_mangled_child_name = (
+                    f"_{unmangled_parent_name.lstrip('_')}{child_name}"
+                )
             else:
                 maybe_mangled_child_name = child_name
             yield from gather_funcs(
