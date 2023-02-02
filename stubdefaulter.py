@@ -17,6 +17,7 @@ import subprocess
 import sys
 import textwrap
 import types
+import typing
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
@@ -197,6 +198,9 @@ def gather_funcs(
     )
     if not isinstance(node.ast, interesting_classes):
         return
+    # special-case some aliases in the typing module
+    if isinstance(runtime_parent, type(typing.Mapping)):
+        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
     try:
         try:
             runtime = getattr(runtime_parent, name)
