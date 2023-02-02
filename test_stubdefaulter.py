@@ -2,6 +2,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import libcst
+import pytest
 import typeshed_client
 
 import stubdefaulter
@@ -168,3 +170,21 @@ def test_stubdefaulter() -> None:
             "wrong: int = 1", "wrong: int = 0"
         )
         assert len(errors) == 0
+
+
+@pytest.mark.parametrize(
+    "obj", [-1, 0, 1, 2, -1.1, -0.0, 0.0, 1.1, True, False, None, "foo", b"bar"]
+)
+def test_infer_value_of_node_known_types(obj: object) -> None:
+    node = libcst.parse_expression(repr(obj))
+    inferred_value = stubdefaulter.infer_value_of_node(node)
+    assert inferred_value == obj
+    assert type(inferred_value) is type(obj)
+    assert repr(inferred_value) == repr(obj)
+
+
+@pytest.mark.parametrize("obj", [3j, [], (), {}, bytearray()])
+def test_infer_value_of_node_unknown_types(obj: object) -> None:
+    node = libcst.parse_expression(repr(obj))
+    inferred_value = stubdefaulter.infer_value_of_node(node)
+    assert inferred_value is NotImplemented
