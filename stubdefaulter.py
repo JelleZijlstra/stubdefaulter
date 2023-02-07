@@ -13,7 +13,6 @@ import importlib
 import inspect
 import io
 import math
-import re
 import subprocess
 import sys
 import textwrap
@@ -60,7 +59,7 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
 
 
 @dataclass
-class ReplaceEllipses(libcst.CSTTransformer):
+class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
     num_added: int = 0
     errors: List[Tuple[str, object, object]] = field(default_factory=list)
@@ -167,7 +166,7 @@ def replace_defaults_in_func(
     cst = libcst.parse_statement(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
-    visitor = ReplaceEllipses(sig)
+    visitor = ReplaceEllipsesUsingRuntime(sig)
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
@@ -237,7 +236,7 @@ def gather_funcs(
         yield node.ast, runtime
 
 
-def add_defaults_to_stub_from_runtime(
+def add_defaults_to_stub_using_runtime(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
@@ -293,23 +292,67 @@ def add_defaults_to_stub_from_runtime(
     return errors, total_num_added
 
 
-def add_obvious_defaults_to_stub(
+@dataclass
+class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
+    num_added: int = 0
+
+    @staticmethod
+    def node_represents_subscripted_Literal(
+        node: libcst.Subscript,
+    ) -> bool:
+        subscript_value = node.value
+        if isinstance(subscript_value, libcst.Name):
+            return subscript_value.value == "Literal"
+        if isinstance(subscript_value, libcst.Attribute):
+            return (
+                isinstance(subscript_value.value, libcst.Name)
+                and subscript_value.value.value in {"typing", "typing_extensions"}
+                and isinstance(subscript_value.attr, libcst.Name)
+                and subscript_value.attr.value == "Literal"
+            )
+        return False
+
+    def leave_Param(
+        self, original_node: libcst.Param, updated_node: libcst.Param
+    ) -> libcst.Param:
+        if not isinstance(original_node.default, libcst.Ellipsis):
+            return updated_node
+        annotation = original_node.annotation
+        if not isinstance(annotation, libcst.Annotation):
+            return updated_node
+        if (
+            isinstance(annotation.annotation, libcst.Name)
+            and annotation.annotation.value == "None"
+        ):
+            self.num_added += 1
+            return updated_node.with_changes(default=libcst.Name(value="None"))
+        if isinstance(
+            annotation.annotation, libcst.Subscript
+        ) and self.node_represents_subscripted_Literal(annotation.annotation):
+            subscript = annotation.annotation
+            if (
+                len(subscript.slice) == 1
+                and isinstance(subscript.slice[0], libcst.SubscriptElement)
+                and isinstance(subscript.slice[0].slice, libcst.Index)
+            ):
+                self.num_added += 1
+                return updated_node.with_changes(default=subscript.slice[0].slice.value)
+        return updated_node
+
+
+def add_defaults_to_stub_using_annotations(
     module_name: str, context: typeshed_client.finder.SearchContext
 ) -> int:
-    total_num_added = 0
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
     source = path.read_text()
-    source, num_added = re.subn(
-        r": Literal\[([a-zA-Z0-9_\"]+)\] = \.\.\.", r": Literal[\1] = \1", source
-    )
-    total_num_added += num_added
-    source, num_added = re.subn(r": None = \.\.\.", ": None = None", source)
-    total_num_added += num_added
-    if total_num_added > 0:
-        path.write_text(source)
-    return total_num_added
+    cst = libcst.parse_module(source)
+    visitor = ReplaceEllipsesUsingAnnotations()
+    modified_cst = cst.visit(visitor)
+    if visitor.num_added > 0:
+        path.write_text(modified_cst.code)
+    return visitor.num_added
 
 
 def add_defaults_to_stub(
@@ -318,8 +361,10 @@ def add_defaults_to_stub(
     blacklisted_objects: frozenset[str],
 ) -> tuple[list[str], int]:
     print(f"Processing {module_name}... ", end="", flush=True)
-    num_added_using_regexes = add_obvious_defaults_to_stub(module_name, context)
-    errors, num_added_using_runtime = add_defaults_to_stub_from_runtime(
+    num_added_using_regexes = add_defaults_to_stub_using_annotations(
+        module_name, context
+    )
+    errors, num_added_using_runtime = add_defaults_to_stub_using_runtime(
         module_name, context, blacklisted_objects
     )
     total_num_added = num_added_using_regexes + num_added_using_runtime

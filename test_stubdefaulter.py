@@ -67,12 +67,17 @@ def useless_runtime(*args, **kwargs):
         raise TypeError("Passing a non-None value for 'foo' is not allowed")
     if 'bar' in kwargs and kwargs['bar'] != 0:
         raise ValueError("Passing a non-0 value for 'bar' is not allowed")
-    if 'baz' in kwargs and kwargs['baz'] != "foo":
-        raise ValueError("Passing a non-foo value for 'baz', what are you thinking??")
+    for kwarg in ('spam', 'eggs', 'ham'):
+        if kwarg in kwargs and kwargs[kwarg] != "foo":
+            raise ValueError(
+                f"Passing a non-foo value for {kwarg!r}, what are you thinking??"
+            )
 """
 INPUT_STUB = """
 import enum
 import re
+import typing
+import typing_extensions
 from typing import overload, Literal
 
 def f(x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
@@ -112,11 +117,21 @@ class FooEnum(str, enum.Enum):
 
 def strenum_default(x: str = ...) -> str: ...
 def pos_only(__x: int = ...) -> None: ...
-def useless_runtime(*args, foo: None = ..., bar: Literal[0] = ..., baz: Literal["foo"] = ..., **kwargs) -> None: ...
+def useless_runtime(
+    *args,
+    foo: None = ...,
+    spam: Literal[0] = ...,
+    eggs: typing.Literal["foo"] = ...,
+    ham: typing_extensions.Literal[True] = ...,
+    baz: Literal[1, 2, 3] = ...,
+    **kwargs
+) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
 import re
+import typing
+import typing_extensions
 from typing import overload, Literal
 
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
@@ -156,7 +171,15 @@ class FooEnum(str, enum.Enum):
 
 def strenum_default(x: str = ...) -> str: ...
 def pos_only(__x: int = 5) -> None: ...
-def useless_runtime(*args, foo: None = None, bar: Literal[0] = 0, baz: Literal["foo"] = "foo", **kwargs) -> None: ...
+def useless_runtime(
+    *args,
+    foo: None = None,
+    spam: Literal[0] = 0,
+    eggs: typing.Literal["foo"] = "foo",
+    ham: typing_extensions.Literal[True] = True,
+    baz: Literal[1, 2, 3] = ...,
+    **kwargs
+) -> None: ...
 """
 PKG_NAME = "pkg"
 
