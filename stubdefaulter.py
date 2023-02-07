@@ -335,8 +335,10 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
                 and isinstance(subscript.slice[0], libcst.SubscriptElement)
                 and isinstance(subscript.slice[0].slice, libcst.Index)
             ):
-                self.num_added += 1
-                return updated_node.with_changes(default=subscript.slice[0].slice.value)
+                literal_slice_contents = subscript.slice[0].slice.value
+                if infer_value_of_node(literal_slice_contents) is not NotImplemented:
+                    self.num_added += 1
+                    return updated_node.with_changes(default=literal_slice_contents)
         return updated_node
 
 

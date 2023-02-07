@@ -72,6 +72,8 @@ def useless_runtime(*args, **kwargs):
             raise ValueError(
                 f"Passing a non-foo value for {kwarg!r}, what are you thinking??"
             )
+    if 'enum_default' in kwargs and kwargs['enum_default'] is not re.ASCII:
+        raise ValueError("FOOL")
 """
 INPUT_STUB = """
 import enum
@@ -124,6 +126,7 @@ def useless_runtime(
     eggs: typing.Literal["foo"] = ...,
     ham: typing_extensions.Literal[True] = ...,
     baz: Literal[1, 2, 3] = ...,
+    enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
 """
@@ -178,6 +181,7 @@ def useless_runtime(
     eggs: typing.Literal["foo"] = "foo",
     ham: typing_extensions.Literal[True] = True,
     baz: Literal[1, 2, 3] = ...,
+    enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
 """
