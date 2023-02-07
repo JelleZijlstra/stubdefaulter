@@ -361,13 +361,13 @@ def add_defaults_to_stub(
     blacklisted_objects: frozenset[str],
 ) -> tuple[list[str], int]:
     print(f"Processing {module_name}... ", end="", flush=True)
-    num_added_using_regexes = add_defaults_to_stub_using_annotations(
+    num_added_using_annotations = add_defaults_to_stub_using_annotations(
         module_name, context
     )
     errors, num_added_using_runtime = add_defaults_to_stub_using_runtime(
         module_name, context, blacklisted_objects
     )
-    total_num_added = num_added_using_regexes + num_added_using_runtime
+    total_num_added = num_added_using_annotations + num_added_using_runtime
     print(f"added {total_num_added} defaults")
     return errors, total_num_added
 
