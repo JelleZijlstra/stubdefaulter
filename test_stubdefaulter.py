@@ -61,6 +61,14 @@ def strenum_default(x=FooEnum.FOO):
 
 def pos_only(x=5):
     pass
+
+def useless_runtime(*args, **kwargs):
+    if 'foo' in kwargs and kwargs['foo'] is not None:
+        raise TypeError("Passing a non-None value for 'foo' is not allowed")
+    if 'bar' in kwargs and kwargs['bar'] != 0:
+        raise ValueError("Passing a non-0 value for 'bar' is not allowed")
+    if 'baz' in kwargs and kwargs['baz'] != "foo":
+        raise ValueError("Passing a non-foo value for 'baz', what are you thinking??")
 """
 INPUT_STUB = """
 import enum
@@ -104,6 +112,7 @@ class FooEnum(str, enum.Enum):
 
 def strenum_default(x: str = ...) -> str: ...
 def pos_only(__x: int = ...) -> None: ...
+def useless_runtime(*args, foo: None = ..., bar: Literal[0] = ..., baz: Literal["foo"] = ..., **kwargs) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
@@ -147,6 +156,7 @@ class FooEnum(str, enum.Enum):
 
 def strenum_default(x: str = ...) -> str: ...
 def pos_only(__x: int = 5) -> None: ...
+def useless_runtime(*args, foo: None = None, bar: Literal[0] = 0, baz: Literal["foo"] = "foo", **kwargs) -> None: ...
 """
 PKG_NAME = "pkg"
 

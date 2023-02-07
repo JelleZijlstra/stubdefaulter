@@ -13,6 +13,7 @@ import importlib
 import inspect
 import io
 import math
+import re
 import subprocess
 import sys
 import textwrap
@@ -236,12 +237,11 @@ def gather_funcs(
         yield node.ast, runtime
 
 
-def add_defaults_to_stub(
+def add_defaults_to_stub_from_runtime(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
 ) -> tuple[list[str], int]:
-    print(f"Processing {module_name}... ", end="", flush=True)
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -290,6 +290,39 @@ def add_defaults_to_stub(
                     f.write(new_line + "\n")
             else:
                 f.write(line + "\n")
+    return errors, total_num_added
+
+
+def add_obvious_defaults_to_stub(
+    module_name: str, context: typeshed_client.finder.SearchContext
+) -> int:
+    total_num_added = 0
+    path = typeshed_client.get_stub_file(module_name, search_context=context)
+    if path is None:
+        raise ValueError(f"Could not find stub for {module_name}")
+    source = path.read_text()
+    source, num_added = re.subn(
+        r": Literal\[([a-zA-Z0-9_\"]+)\] = \.\.\.", r": Literal[\1] = \1", source
+    )
+    total_num_added += num_added
+    source, num_added = re.subn(r": None = \.\.\.", ": None = None", source)
+    total_num_added += num_added
+    if total_num_added > 0:
+        path.write_text(source)
+    return total_num_added
+
+
+def add_defaults_to_stub(
+    module_name: str,
+    context: typeshed_client.finder.SearchContext,
+    blacklisted_objects: frozenset[str],
+) -> tuple[list[str], int]:
+    print(f"Processing {module_name}... ", end="", flush=True)
+    num_added_using_regexes = add_obvious_defaults_to_stub(module_name, context)
+    errors, num_added_using_runtime = add_defaults_to_stub_from_runtime(
+        module_name, context, blacklisted_objects
+    )
+    total_num_added = num_added_using_regexes + num_added_using_runtime
     print(f"added {total_num_added} defaults")
     return errors, total_num_added
 
