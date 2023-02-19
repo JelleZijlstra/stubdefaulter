@@ -79,6 +79,8 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 return self.sig.parameters[param_name[2:]]
             except KeyError:
                 pass
+        elif node not in self.stub_params.posonly_params:
+            return None
 
         all_runtime_parameters = self.sig.parameters.values()
         variadic_parameter_kinds = {
