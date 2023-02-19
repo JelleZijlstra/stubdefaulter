@@ -19,7 +19,7 @@ import textwrap
 import types
 import typing
 from dataclasses import dataclass, field
-from itertools import chain, islice
+from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
 
@@ -69,11 +69,20 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         self, node: libcst.Param
     ) -> inspect.Parameter | None:
         param_name = node.name.value
+
+        # Scenario (1): the stub signature and the runtime signature have parameters with the same name
+        # Assume identically named parameters are "the same" parameter;
+        # return the runtime parameter with the same name
         try:
             return self.sig.parameters[param_name]
         except KeyError:
             pass
 
+        # Scenario (2): the stub signature has a parameter with the same name as a parameter at runtime,
+        # except that the parameter in the stub has `__` prepended to the beginning of the name.
+        # This is used in stubs to indicate positional-only parameters on Python <3.8;
+        # assume that these similarly named parameters are also "the same" parameter;
+        # return the runtime parameter with the similar name
         if (
             node in self.stub_params.params
             and param_name.startswith("__")
@@ -86,7 +95,18 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         elif node not in self.stub_params.posonly_params:
             return None
 
-        all_runtime_parameters = self.sig.parameters.values()
+        # Scenario (3): the runtime signature doesn't have any parameters
+        # that have the same name as the stub parameter,
+        # or that have the same name with `__` prepended.
+        # Fall back to the nth parameter of the runtime signature
+        # (where n is the index of the stub parameter in the stub signature),
+        # iff all the following conditions are true:
+        #
+        # - The number of parameters at runtime == the number of parameters in the stub
+        # - There are no variadic parameters (*args or **kwargs) at runtime or in the stub
+        # - The parameter is marked as being pos-only in the stub,
+        #   either through PEP 570 syntax or through a parameter name starting with `__`
+        all_runtime_parameters = list(self.sig.parameters.values())
         variadic_parameter_kinds = {
             inspect.Parameter.VAR_POSITIONAL,
             inspect.Parameter.VAR_KEYWORD,
@@ -97,6 +117,11 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         ):
             return None
 
+        if isinstance(self.stub_params.star_arg, libcst.Param) or isinstance(
+            self.stub_params.star_kwarg, libcst.Param
+        ):
+            return None
+
         all_stub_params = list(
             chain(
                 self.stub_params.posonly_params,
@@ -104,13 +129,11 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 self.stub_params.kwonly_params,
             )
         )
-        num_stub_params = len(all_stub_params)
-        num_runtime_params = len(all_runtime_parameters)
-        if num_stub_params == num_runtime_params:
-            n = next(i for i, param in enumerate(all_stub_params) if param == node)
-            return next(islice(all_runtime_parameters, n, n + 1))
 
-        return None
+        if len(all_stub_params) != len(all_runtime_parameters):
+            return None
+
+        return all_runtime_parameters[all_stub_params.index(node)]
 
     def infer_value_for_default(
         self, node: libcst.Param
