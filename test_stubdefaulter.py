@@ -75,7 +75,7 @@ def useless_runtime(*args, **kwargs):
     if 'enum_default' in kwargs and kwargs['enum_default'] is not re.ASCII:
         raise ValueError("FOOL")
 
-def incorrect_parameter_names_in_stub(x="foo", y="bar", z="baz"):
+def incorrect_parameter_names_in_stub(x="foo", y="bar", *, z="baz"):
     pass
 """
 INPUT_STUB = """
