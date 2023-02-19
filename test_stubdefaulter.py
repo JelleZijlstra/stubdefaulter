@@ -75,7 +75,7 @@ def useless_runtime(*args, **kwargs):
     if 'enum_default' in kwargs and kwargs['enum_default'] is not re.ASCII:
         raise ValueError("FOOL")
 
-def incorrect_parameter_names_in_stub(x="foo", y="bar"):
+def incorrect_parameter_names_in_stub(x="foo", y="bar", z="baz"):
     pass
 """
 INPUT_STUB = """
@@ -132,8 +132,8 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
-# The default is not added for baaaaaaar, since it's not marked as positional-only in the stub
-def incorrect_parameter_names_in_stub(__fooooooo: str = ..., baaaaaaar: str = ...) -> None: ...
+# Defaults are not added for baaaaaaar or baaaz, since they're not marked as positional-only in the stub
+def incorrect_parameter_names_in_stub(__fooooooo: str = ..., baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
@@ -189,8 +189,8 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
-# The default is not added for baaaaaaar, since it's not marked as positional-only in the stub
-def incorrect_parameter_names_in_stub(__fooooooo: str = 'foo', baaaaaaar: str = ...) -> None: ...
+# Defaults are not added for baaaaaaar or baaaz, since they're not marked as positional-only in the stub
+def incorrect_parameter_names_in_stub(__fooooooo: str = 'foo', baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
 """
 PKG_NAME = "pkg"
 

@@ -74,7 +74,11 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         except KeyError:
             pass
 
-        if param_name.startswith("__") and not param_name.endswith("__"):
+        if (
+            node in self.stub_params.params
+            and param_name.startswith("__")
+            and not param_name.endswith("__")
+        ):
             try:
                 return self.sig.parameters[param_name[2:]]
             except KeyError:
@@ -94,7 +98,11 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return None
 
         all_stub_params = list(
-            chain(self.stub_params.params, self.stub_params.kwonly_params)
+            chain(
+                self.stub_params.posonly_params,
+                self.stub_params.params,
+                self.stub_params.kwonly_params,
+            )
         )
         num_stub_params = len(all_stub_params)
         num_runtime_params = len(all_runtime_parameters)
