@@ -74,6 +74,9 @@ def useless_runtime(*args, **kwargs):
             )
     if 'enum_default' in kwargs and kwargs['enum_default'] is not re.ASCII:
         raise ValueError("FOOL")
+
+def incorrect_parameter_name_in_stub(x="foo"):
+    pass
 """
 INPUT_STUB = """
 import enum
@@ -129,6 +132,7 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
+def incorrect_parameter_name_in_stub(__fooooooo: str = ...) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
@@ -184,6 +188,7 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
+def incorrect_parameter_name_in_stub(__fooooooo: str = 'foo') -> None: ...
 """
 PKG_NAME = "pkg"
 

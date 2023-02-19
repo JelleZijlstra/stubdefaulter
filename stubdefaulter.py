@@ -19,7 +19,7 @@ import textwrap
 import types
 import typing
 from dataclasses import dataclass, field
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
 
@@ -61,19 +61,51 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
 @dataclass
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
+    stub_params: libcst.Parameters
     num_added: int = 0
     errors: List[Tuple[str, object, object]] = field(default_factory=list)
+
+    def get_matching_runtime_parameter(
+        self, node: libcst.Param
+    ) -> inspect.Parameter | None:
+        param_name = node.name.value
+        try:
+            return self.sig.parameters[param_name]
+        except KeyError:
+            pass
+
+        if param_name.startswith("__") and not param_name.endswith("__"):
+            try:
+                return self.sig.parameters[param_name[2:]]
+            except KeyError:
+                pass
+
+        all_runtime_parameters = self.sig.parameters.values()
+        variadic_parameter_kinds = {
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        }
+
+        if any(
+            param.kind in variadic_parameter_kinds for param in all_runtime_parameters
+        ):
+            return None
+
+        all_stub_params = list(
+            chain(self.stub_params.params, self.stub_params.kwonly_params)
+        )
+        num_stub_params = len(all_stub_params)
+        num_runtime_params = len(all_runtime_parameters)
+        if num_stub_params == num_runtime_params:
+            n = next(i for i, param in enumerate(all_stub_params) if param == node)
+            return next(islice(all_runtime_parameters, n, n + 1))
+
+        return None
 
     def infer_value_for_default(
         self, node: libcst.Param
     ) -> libcst.BaseExpression | None:
-        param_name = node.name.value
-        param: inspect.Parameter | None = None
-        try:
-            param = self.sig.parameters[param_name]
-        except KeyError:
-            if param_name.startswith("__") and not param_name.endswith("__"):
-                param = self.sig.parameters.get(param_name[2:])
+        param = self.get_matching_runtime_parameter(node)
         if not isinstance(param, inspect.Parameter):
             return None
         if param.default is inspect.Parameter.empty:
@@ -166,7 +198,8 @@ def replace_defaults_in_func(
     cst = libcst.parse_statement(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
-    visitor = ReplaceEllipsesUsingRuntime(sig)
+    assert isinstance(cst, libcst.FunctionDef)
+    visitor = ReplaceEllipsesUsingRuntime(sig, cst.params)
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
