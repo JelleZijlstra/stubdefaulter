@@ -133,7 +133,10 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         if len(all_stub_params) != len(all_runtime_parameters):
             return None
 
-        return all_runtime_parameters[all_stub_params.index(node)]
+        runtime_param = all_runtime_parameters[all_stub_params.index(node)]
+        if runtime_param.kind is inspect.Parameter.POSITIONAL_ONLY:
+            return runtime_param
+        return None
 
     def infer_value_for_default(
         self, node: libcst.Param

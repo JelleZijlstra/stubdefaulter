@@ -10,6 +10,7 @@ import stubdefaulter
 
 PY_FILE = """
 import enum
+import inspect
 import re
 
 def f(x=0, y="y", z=True, a=None):
@@ -75,8 +76,17 @@ def useless_runtime(*args, **kwargs):
     if 'enum_default' in kwargs and kwargs['enum_default'] is not re.ASCII:
         raise ValueError("FOOL")
 
-def incorrect_parameter_names_in_stub(x="foo", y="bar", *, z="baz"):
+def incorrect_non_posonly_parameter_names_in_stub(x="foo", y="bar", *, z="baz"):
     pass
+
+# Some slightly hacky signature modification is required here,
+# so that we can get a pos-only parameter at runtime,
+# while having a test that passes on Python 3.7
+def incorrect_posonly_parameter_names_in_sub(x="foo"):
+    pass
+incorrect_posonly_parameter_names_in_sub.__signature__ = inspect.Signature(
+    [inspect.Parameter("x", kind=inspect.Parameter.POSITIONAL_ONLY, default="foo")]
+)
 """
 INPUT_STUB = """
 import enum
@@ -132,8 +142,8 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
-# Defaults are not added for baaaaaaar or baaaz, since they're not marked as positional-only in the stub
-def incorrect_parameter_names_in_stub(__fooooooo: str = ..., baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
+def incorrect_non_posonly_parameter_names_in_stub(__fooooooo: str = ..., baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
+def incorrect_posonly_parameter_names_in_sub(__foooooo: str = ...) -> None: ...
 """
 EXPECTED_STUB = """
 import enum
@@ -189,8 +199,8 @@ def useless_runtime(
     enum_default: Literal[re.ASCII] = ...,
     **kwargs
 ) -> None: ...
-# Defaults are not added for baaaaaaar or baaaz, since they're not marked as positional-only in the stub
-def incorrect_parameter_names_in_stub(__fooooooo: str = 'foo', baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
+def incorrect_non_posonly_parameter_names_in_stub(__fooooooo: str = ..., baaaaaaar: str = ..., *, baaz: str = ...) -> None: ...
+def incorrect_posonly_parameter_names_in_sub(__foooooo: str = 'foo') -> None: ...
 """
 PKG_NAME = "pkg"
 
