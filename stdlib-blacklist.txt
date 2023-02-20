@@ -36,6 +36,12 @@ types.CodeType.replace
 # https://github.com/python/typeshed/pull/9625
 typing.Sequence.index
 
+# The runtime gives `None` as default values on Python 3.7 for these functions, but not on Python 3.8+
+# Passing `None` in will result in an exception being raised
+cmath.log
+os.utime
+pyexpat.XMLParserType.ExternalEntityParserCreate
+
 # TODO: fix these in typeshed: https://github.com/python/typeshed/issues/9652
 asyncio.base_events.BaseEventLoop.create_connection
 asyncio.base_events.BaseEventLoop.create_server
