@@ -106,6 +106,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         # - There are no variadic parameters (*args or **kwargs) at runtime or in the stub
         # - The parameter is marked as being pos-only in the stub,
         #   either through PEP 570 syntax or through a parameter name starting with `__`
+        # - The parameter is also positional-only at runtime
         all_runtime_parameters = list(self.sig.parameters.values())
         variadic_parameter_kinds = {
             inspect.Parameter.VAR_POSITIONAL,
