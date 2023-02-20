@@ -61,19 +61,88 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
 @dataclass
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
+    stub_params: libcst.Parameters
     num_added: int = 0
     errors: List[Tuple[str, object, object]] = field(default_factory=list)
+
+    def get_matching_runtime_parameter(
+        self, node: libcst.Param
+    ) -> inspect.Parameter | None:
+        param_name = node.name.value
+
+        # Scenario (1): the stub signature and the runtime signature have parameters with the same name
+        # Assume identically named parameters are "the same" parameter;
+        # return the runtime parameter with the same name
+        try:
+            return self.sig.parameters[param_name]
+        except KeyError:
+            pass
+
+        # Scenario (2): the stub signature has a parameter with the same name as a parameter at runtime,
+        # except that the parameter in the stub has `__` prepended to the beginning of the name.
+        # This is used in stubs to indicate positional-only parameters on Python <3.8;
+        # assume that these similarly named parameters are also "the same" parameter;
+        # return the runtime parameter with the similar name
+        if (
+            node in self.stub_params.params
+            and param_name.startswith("__")
+            and not param_name.endswith("__")
+        ):
+            try:
+                return self.sig.parameters[param_name[2:]]
+            except KeyError:
+                pass
+        elif node not in self.stub_params.posonly_params:
+            return None
+
+        # Scenario (3): the runtime signature doesn't have any parameters
+        # that have the same name as the stub parameter,
+        # or that have the same name with `__` prepended.
+        # Fall back to the nth parameter of the runtime signature
+        # (where n is the index of the stub parameter in the stub signature),
+        # iff all the following conditions are true:
+        #
+        # - The number of parameters at runtime == the number of parameters in the stub
+        # - There are no variadic parameters (*args or **kwargs) at runtime or in the stub
+        # - The parameter is marked as being pos-only in the stub,
+        #   either through PEP 570 syntax or through a parameter name starting with `__`
+        # - The parameter is also positional-only at runtime
+        all_runtime_parameters = list(self.sig.parameters.values())
+        variadic_parameter_kinds = {
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        }
+
+        if any(
+            param.kind in variadic_parameter_kinds for param in all_runtime_parameters
+        ):
+            return None
+
+        if isinstance(self.stub_params.star_arg, libcst.Param) or isinstance(
+            self.stub_params.star_kwarg, libcst.Param
+        ):
+            return None
+
+        all_stub_params = list(
+            chain(
+                self.stub_params.posonly_params,
+                self.stub_params.params,
+                self.stub_params.kwonly_params,
+            )
+        )
+
+        if len(all_stub_params) != len(all_runtime_parameters):
+            return None
+
+        runtime_param = all_runtime_parameters[all_stub_params.index(node)]
+        if runtime_param.kind is inspect.Parameter.POSITIONAL_ONLY:
+            return runtime_param
+        return None
 
     def infer_value_for_default(
         self, node: libcst.Param
     ) -> libcst.BaseExpression | None:
-        param_name = node.name.value
-        param: inspect.Parameter | None = None
-        try:
-            param = self.sig.parameters[param_name]
-        except KeyError:
-            if param_name.startswith("__") and not param_name.endswith("__"):
-                param = self.sig.parameters.get(param_name[2:])
+        param = self.get_matching_runtime_parameter(node)
         if not isinstance(param, inspect.Parameter):
             return None
         if param.default is inspect.Parameter.empty:
@@ -166,7 +235,8 @@ def replace_defaults_in_func(
     cst = libcst.parse_statement(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
-    visitor = ReplaceEllipsesUsingRuntime(sig)
+    assert isinstance(cst, libcst.FunctionDef)
+    visitor = ReplaceEllipsesUsingRuntime(sig, cst.params)
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
