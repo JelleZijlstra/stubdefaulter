@@ -42,6 +42,10 @@ cmath.log
 os.utime
 pyexpat.XMLParserType.ExternalEntityParserCreate
 
+# Adding the default to this method causes stubtest to fail for typeshed's setuptools stubs
+# See https://github.com/python/typeshed/pull/9800
+distutils.dist.Distribution.announce
+
 # TODO: fix these in typeshed: https://github.com/python/typeshed/issues/9652
 asyncio.base_events.BaseEventLoop.create_connection
 asyncio.base_events.BaseEventLoop.create_server
