@@ -24,3 +24,6 @@ dev = [
     "pre-commit-hooks==4.4.0",   # Must match .pre-commit-config.yaml
     "pytest",
 ]
+
+[tool.hatch.build]
+packages = ["stubdefaulter"]
