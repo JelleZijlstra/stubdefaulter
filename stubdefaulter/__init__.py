@@ -581,7 +581,3 @@ def main() -> None:
     m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
     print(colored(m, "red" if errors else "green"))
     sys.exit(1 if (errors and not args.exit_zero) else 0)
-
-
-if __name__ == "__main__":
-    main()
