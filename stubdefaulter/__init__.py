@@ -69,13 +69,13 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
         dict_ret = {}
         for element in node.elements:
             if isinstance(element, libcst.DictElement):
-                key, value = infer_value_of_node(element.key), infer_value_of_node(
-                    element.value
-                )
-                if key is NotImplemented or value is NotImplemented:
+                key = infer_value_of_node(element.key)
+                if key is NotImplemented:
                     return NotImplemented
-                else:
-                    dict_ret[key] = value
+                value = infer_value_of_node(element.value)
+                if value is NotImplemented:
+                    return NotImplemented
+                dict_ret[key] = value
             else:
                 return NotImplemented
         return dict_ret
@@ -211,9 +211,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 )
             else:
                 return libcst.Float(value=str(runtime_default))
-        elif type(runtime_default) in {tuple, list} or (
-            type(runtime_default) is set and len(runtime_default) > 0
-        ):
+        elif type(runtime_default) in {tuple, list}:
             members = [
                 self._infer_value_for_default(None, member)
                 for member in runtime_default
@@ -221,14 +219,26 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             if any(member is None for member in members):
                 return None
             # pyanalyze doesn't like us using lowercase type[] here on <3.9
-            libcst_cls: Type[libcst.Tuple | libcst.List | libcst.Set]
-            if isinstance(runtime_default, tuple):
-                libcst_cls = libcst.Tuple
-            elif isinstance(runtime_default, list):
-                libcst_cls = libcst.List
-            else:
-                libcst_cls = libcst.Set
+            libcst_cls: Type[libcst.Tuple | libcst.List]
+            libcst_cls = (
+                libcst.Tuple if isinstance(runtime_default, tuple) else libcst.List
+            )
             return libcst_cls(
+                elements=[
+                    libcst.Element(cast(libcst.BaseExpression, member))
+                    for member in members
+                ]
+            )
+        elif type(runtime_default) is set:
+            if not runtime_default:
+                return None
+            members = [
+                self._infer_value_for_default(None, member)
+                for member in sorted(runtime_default, key=repr)
+            ]
+            if any(member is None for member in members):
+                return None
+            return libcst.Set(
                 elements=[
                     libcst.Element(cast(libcst.BaseExpression, member))
                     for member in members

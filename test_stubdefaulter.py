@@ -33,8 +33,7 @@ def containers(
     c={},
     d=(1, "foo", b"bar", True, None, 1.23),
     e=[1, "foo", b"bar", True, None, 1.23],
-    # Can't test with a set with >1 element as the order is non-deterministic!
-    f={1},
+    f={1, "foo", b"bar", False, None, 1.23},
     g={-1: 1, "foo": "foo", b"bar": "bar", True: False, None: None, 1.23: 1.234},
 ):
     pass
@@ -121,7 +120,7 @@ def containers(
     c: dict[str, int] = ...,
     d: tuple[object, ...] = ...,
     e: list[object] = ...,
-    f: set[int] = ...,
+    f: set[object] = ...,
     g: dict[object, object] = ...,
 ) -> None: ...
 def bad_container(x: set[int] = ...) -> None: ...
@@ -188,7 +187,7 @@ def containers(
     c: dict[str, int] = {},
     d: tuple[object, ...] = (1, 'foo', b'bar', True, None, 1.23),
     e: list[object] = [1, 'foo', b'bar', True, None, 1.23],
-    f: set[int] = {1},
+    f: set[object] = {'foo', 1, 1.23, False, None, b'bar'},
     g: dict[object, object] = {-1: 1, 'foo': 'foo', b'bar': 'bar', True: False, None: None, 1.23: 1.234},
 ) -> None: ...
 def bad_container(x: set[int] = ...) -> None: ...
@@ -288,10 +287,10 @@ def test_stubdefaulter() -> None:
         [],
         (),
         {},
-        (1, "foo", b"bar", True, None, 1.23),
-        [1, "foo", b"bar", True, None, 1.23],
+        (1, "foo", b"bar", True, None, 1.23, ["foo", ("bar", 1)]),
+        [1, "foo", b"bar", True, None, 1.23, (1, {b"bar": False})],
         {1},
-        {-1: 1, "foo": "foo", b"bar": "bar", True: False, None: None, 1.23: 1.234},
+        {-1: 1, "foo": "foo", (b"bar", b"baz"): "bar", False: [1, 2, {2, 3, 4}]},
     ],
 )
 def test_infer_value_of_node_known_types(obj: object) -> None:
