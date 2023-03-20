@@ -56,15 +56,14 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
             return NotImplemented
     elif isinstance(node, (libcst.List, libcst.Tuple, libcst.Set)):
         ret = [infer_value_of_node(element.value) for element in node.elements]
-        if all(member is not NotImplemented for member in ret):
-            if isinstance(node, libcst.List):
-                return ret
-            elif isinstance(node, libcst.Tuple):
-                return tuple(ret)
-            else:
-                return set(ret)
-        else:
+        if NotImplemented in ret:
             return NotImplemented
+        elif isinstance(node, libcst.List):
+            return ret
+        elif isinstance(node, libcst.Tuple):
+            return tuple(ret)
+        else:
+            return set(ret)
     elif isinstance(node, libcst.Dict):
         dict_ret = {}
         for element in node.elements:
