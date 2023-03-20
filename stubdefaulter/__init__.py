@@ -230,6 +230,8 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             )
         elif type(runtime_default) is set:
             if not runtime_default:
+                # The empty set is a "call expression", not a literal;
+                # we only want to add defaults where they can be expressed as literals
                 return None
             members = [
                 self._infer_value_for_default(None, member)
@@ -246,10 +248,9 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 ]
             )
         elif type(runtime_default) is dict:
+            infer_default = self._infer_value_for_default
             mapping = {
-                self._infer_value_for_default(None, key): self._infer_value_for_default(
-                    None, value
-                )
+                infer_default(None, key): infer_default(None, value)
                 for key, value in runtime_default.items()
             }
             if None in mapping or None in mapping.values():
