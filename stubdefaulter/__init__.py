@@ -233,6 +233,8 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 return None
             members = [
                 self._infer_value_for_default(None, member)
+                # Sort by the repr so that the output of stubdefaulter is deterministic,
+                # since the ordering of a set at runtime isn't deterministic
                 for member in sorted(runtime_default, key=repr)
             ]
             if None in members:
