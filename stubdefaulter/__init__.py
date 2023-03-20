@@ -21,7 +21,7 @@ import typing
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Sequence, Tuple, Type, Union, cast
 
 import libcst
 import tomli
@@ -54,6 +54,30 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
             return -operand
         else:
             return NotImplemented
+    elif isinstance(node, (libcst.List, libcst.Tuple, libcst.Set)):
+        ret = [infer_value_of_node(element.value) for element in node.elements]
+        if NotImplemented in ret:
+            return NotImplemented
+        elif isinstance(node, libcst.List):
+            return ret
+        elif isinstance(node, libcst.Tuple):
+            return tuple(ret)
+        else:
+            return set(ret)
+    elif isinstance(node, libcst.Dict):
+        dict_ret = {}
+        for element in node.elements:
+            if isinstance(element, libcst.DictElement):
+                key = infer_value_of_node(element.key)
+                if key is NotImplemented:
+                    return NotImplemented
+                value = infer_value_of_node(element.value)
+                if value is NotImplemented:
+                    return NotImplemented
+                dict_ret[key] = value
+            else:
+                return NotImplemented
+        return dict_ret
     else:
         return NotImplemented
 
@@ -147,39 +171,99 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return None
         if param.default is inspect.Parameter.empty:
             return None
-        if type(param.default) is bool or param.default is None:
-            return libcst.Name(value=str(param.default))
-        elif type(param.default) in {str, bytes}:
-            return libcst.SimpleString(value=repr(param.default))
-        elif type(param.default) is int:
+        return self._infer_value_for_default(node, param.default)
+
+    def _infer_value_for_default(
+        self, node: libcst.Param | None, runtime_default: Any
+    ) -> libcst.BaseExpression | None:
+        if isinstance(runtime_default, (bool, type(None))):
+            return libcst.Name(value=str(runtime_default))
+        elif type(runtime_default) in {str, bytes}:
+            return libcst.SimpleString(value=repr(runtime_default))
+        elif type(runtime_default) is int:
             if (
-                node.annotation
+                node
+                and node.annotation
                 and isinstance(node.annotation.annotation, libcst.Name)
                 and node.annotation.annotation.value == "bool"
             ):
                 # Skip cases where the type is annotated as bool but the default is an int.
                 return None
-            if param.default >= 0:
-                return libcst.Integer(value=str(param.default))
+            if runtime_default >= 0:
+                return libcst.Integer(value=str(runtime_default))
             else:
                 return libcst.UnaryOperation(
                     operator=libcst.Minus(),
-                    expression=libcst.Integer(value=str(-param.default)),
+                    expression=libcst.Integer(value=str(-runtime_default)),
                 )
-        elif type(param.default) is float:
-            if not math.isfinite(param.default):
+        elif type(runtime_default) is float:
+            if not math.isfinite(runtime_default):
                 # Edge cases that it's probably not worth handling
                 return None
             # `-0.0 == +0.0`, but we want to keep the sign,
             # so use math.copysign() rather than a comparison with 0
             # to determine whether or not it's a negative float
-            if math.copysign(1, param.default) < 0:
+            if math.copysign(1, runtime_default) < 0:
                 return libcst.UnaryOperation(
                     operator=libcst.Minus(),
-                    expression=libcst.Float(value=str(-param.default)),
+                    expression=libcst.Float(value=str(-runtime_default)),
                 )
             else:
-                return libcst.Float(value=str(param.default))
+                return libcst.Float(value=str(runtime_default))
+        elif type(runtime_default) in {tuple, list}:
+            members = [
+                self._infer_value_for_default(None, member)
+                for member in runtime_default
+            ]
+            if None in members:
+                return None
+            # pyanalyze doesn't like us using lowercase type[] here on <3.9
+            libcst_cls: Type[libcst.Tuple | libcst.List]
+            libcst_cls = (
+                libcst.Tuple if isinstance(runtime_default, tuple) else libcst.List
+            )
+            return libcst_cls(
+                elements=[
+                    libcst.Element(cast(libcst.BaseExpression, member))
+                    for member in members
+                ]
+            )
+        elif type(runtime_default) is set:
+            if not runtime_default:
+                # The empty set is a "call expression", not a literal;
+                # we only want to add defaults where they can be expressed as literals
+                return None
+            members = [
+                self._infer_value_for_default(None, member)
+                # Sort by the repr so that the output of stubdefaulter is deterministic,
+                # since the ordering of a set at runtime isn't deterministic
+                for member in sorted(runtime_default, key=repr)
+            ]
+            if None in members:
+                return None
+            return libcst.Set(
+                elements=[
+                    libcst.Element(cast(libcst.BaseExpression, member))
+                    for member in members
+                ]
+            )
+        elif type(runtime_default) is dict:
+            infer_default = self._infer_value_for_default
+            mapping = {
+                infer_default(None, key): infer_default(None, value)
+                for key, value in runtime_default.items()
+            }
+            if None in mapping or None in mapping.values():
+                return None
+            return libcst.Dict(
+                elements=[
+                    libcst.DictElement(
+                        key=cast(libcst.BaseExpression, key),
+                        value=cast(libcst.BaseExpression, value),
+                    )
+                    for key, value in mapping.items()
+                ]
+            )
         return None
 
     def leave_Param(

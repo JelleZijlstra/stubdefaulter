@@ -27,6 +27,18 @@ def float_edge_cases(one=float("nan"), two=float("inf"), three=float("-inf")):
     pass
 def bytes_func(one=b"foo"):
     pass
+def containers(
+    a=(),
+    b=[],
+    c={},
+    d=(1, "foo", b"bar", True, None, 1.23),
+    e=[1, "foo", b"bar", True, None, 1.23],
+    f={1, "foo", b"bar", False, None, 1.23},
+    g={-1: 1, "foo": "foo", b"bar": "bar", True: False, None: None, 1.23: 1.234},
+):
+    pass
+def bad_container(x=set()):
+    pass
 
 class Capybara:
     def __init__(self, x=0, y="y", z=True, a=None):
@@ -102,6 +114,16 @@ def wrong_default(wrong: int = 1) -> None: ...
 def floats(a: float = ..., b: float = ..., c: float = ..., d: float = ...) -> None: ...
 def float_edge_cases(one: float = ..., two: float = ..., three: float = ...) -> None: ...
 def bytes_func(one: bytes = ...) -> None: ...
+def containers(
+    a: tuple[str, ...] = ...,
+    b: list[str] = ...,
+    c: dict[str, int] = ...,
+    d: tuple[object, ...] = ...,
+    e: list[object] = ...,
+    f: set[object] = ...,
+    g: dict[object, object] = ...,
+) -> None: ...
+def bad_container(x: set[int] = ...) -> None: ...
 
 class Capybara:
     def __init__(self, x: int = ..., y: str = ..., z: bool = ..., a: Any = ...) -> None: ...
@@ -159,6 +181,16 @@ def wrong_default(wrong: int = 1) -> None: ...
 def floats(a: float = 1.23456, b: float = 0.0, c: float = -9.87654, d: float = -0.0) -> None: ...
 def float_edge_cases(one: float = ..., two: float = ..., three: float = ...) -> None: ...
 def bytes_func(one: bytes = b'foo') -> None: ...
+def containers(
+    a: tuple[str, ...] = (),
+    b: list[str] = [],
+    c: dict[str, int] = {},
+    d: tuple[object, ...] = (1, 'foo', b'bar', True, None, 1.23),
+    e: list[object] = [1, 'foo', b'bar', True, None, 1.23],
+    f: set[object] = {'foo', 1, 1.23, False, None, b'bar'},
+    g: dict[object, object] = {-1: 1, 'foo': 'foo', b'bar': 'bar', True: False, None: None, 1.23: 1.234},
+) -> None: ...
+def bad_container(x: set[int] = ...) -> None: ...
 
 class Capybara:
     def __init__(self, x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
@@ -237,7 +269,29 @@ def test_stubdefaulter() -> None:
 
 
 @pytest.mark.parametrize(
-    "obj", [-1, 0, 1, 2, -1.1, -0.0, 0.0, 1.1, True, False, None, "foo", b"bar"]
+    "obj",
+    [
+        -1,
+        0,
+        1,
+        2,
+        -1.1,
+        -0.0,
+        0.0,
+        1.1,
+        True,
+        False,
+        None,
+        "foo",
+        b"bar",
+        [],
+        (),
+        {},
+        (1, "foo", b"bar", True, None, 1.23, ["foo", ("bar", 1)]),
+        [1, "foo", b"bar", True, None, 1.23, (1, {b"bar": False})],
+        {1},
+        {-1: 1, "foo": "foo", (b"bar", b"baz"): "bar", False: [1, 2, {2, 3, 4}]},
+    ],
 )
 def test_infer_value_of_node_known_types(obj: object) -> None:
     node = libcst.parse_expression(repr(obj))
@@ -247,7 +301,7 @@ def test_infer_value_of_node_known_types(obj: object) -> None:
     assert repr(inferred_value) == repr(obj)
 
 
-@pytest.mark.parametrize("obj", [3j, [], (), {}, bytearray()])
+@pytest.mark.parametrize("obj", [3j, bytearray(), set()])
 def test_infer_value_of_node_unknown_types(obj: object) -> None:
     node = libcst.parse_expression(repr(obj))
     inferred_value = stubdefaulter.infer_value_of_node(node)

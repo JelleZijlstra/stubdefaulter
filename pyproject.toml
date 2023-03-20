@@ -28,3 +28,9 @@ dev = [
 
 [tool.hatch.build]
 packages = ["stubdefaulter"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+combine_as_imports = true
+skip_gitignore = true
