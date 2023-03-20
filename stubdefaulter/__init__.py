@@ -21,7 +21,7 @@ import typing
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Sequence, Tuple, Union, cast
+from typing import Any, Dict, Iterator, List, Sequence, Tuple, Type, Union, cast
 
 import libcst
 import tomli
@@ -220,7 +220,8 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             ]
             if any(member is None for member in members):
                 return None
-            libcst_cls: type[libcst.Tuple | libcst.List | libcst.Set]
+            # pyanalyze doesn't like us using lowercase type[] here on <3.9
+            libcst_cls: Type[libcst.Tuple | libcst.List | libcst.Set]
             if isinstance(runtime_default, tuple):
                 libcst_cls = libcst.Tuple
             elif isinstance(runtime_default, list):
