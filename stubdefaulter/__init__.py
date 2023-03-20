@@ -182,7 +182,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return libcst.SimpleString(value=repr(runtime_default))
         elif type(runtime_default) is int:
             if (
-                node is not None
+                node
                 and node.annotation
                 and isinstance(node.annotation.annotation, libcst.Name)
                 and node.annotation.annotation.value == "bool"
