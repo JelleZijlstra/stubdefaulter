@@ -215,7 +215,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 self._infer_value_for_default(None, member)
                 for member in runtime_default
             ]
-            if any(member is None for member in members):
+            if None in members:
                 return None
             # pyanalyze doesn't like us using lowercase type[] here on <3.9
             libcst_cls: Type[libcst.Tuple | libcst.List]
@@ -235,7 +235,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 self._infer_value_for_default(None, member)
                 for member in sorted(runtime_default, key=repr)
             ]
-            if any(member is None for member in members):
+            if None in members:
                 return None
             return libcst.Set(
                 elements=[
@@ -250,7 +250,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 )
                 for key, value in runtime_default.items()
             }
-            if any(key is None or value is None for key, value in mapping.items()):
+            if None in mapping or None in mapping.values():
                 return None
             return libcst.Dict(
                 elements=[
