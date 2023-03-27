@@ -20,7 +20,7 @@ virtual environment.
 
 - Install the package
   - By cloning: `git clone https://github.com/JelleZijlstra/stubdefaulter.git`, `cd stubdefaulter` and `pip install .`; there is no PyPI package yet
-  - or by installing from github directly: `pip install git+https://github.com/JelleZijlstra/stubdefaulter.git#egg=stubdefaulter`
+  - or by installing from GitHub directly: `pip install git+https://github.com/JelleZijlstra/stubdefaulter.git#egg=stubdefaulter`
 - Invoke it as `python -m stubdefaulter`
 - Example invocations:
   - `python -m stubdefaulter --stdlib-path path/to/typeshed/stdlib`
