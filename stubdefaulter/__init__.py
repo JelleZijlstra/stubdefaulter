@@ -29,6 +29,22 @@ import typeshed_client
 from termcolor import colored
 
 
+# Defaults with a repr longer than this number will not be added.
+# This is an arbitrary value, but it's useful to have a cut-off point somewhere.
+# There's no real use case for *very* long defaults,
+# and they have the potential to cause severe performance issues
+# for tools that try to parse or display Python source code
+DEFAULT_LENGTH_LIMIT = 500
+
+
+def default_is_too_long(default: libcst.BaseExpression) -> bool:
+    default_as_module = libcst.Module(
+        body=[libcst.SimpleStatementLine(body=[libcst.Expr(value=default)])]
+    )
+    repr_of_default = default_as_module.code.strip()
+    return len(repr_of_default) > DEFAULT_LENGTH_LIMIT
+
+
 def log(*objects: object) -> None:
     print(colored(" ".join(map(str, objects)), "yellow"))
 
@@ -171,7 +187,10 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return None
         if param.default is inspect.Parameter.empty:
             return None
-        return self._infer_value_for_default(node, param.default)
+        new_stub_default = self._infer_value_for_default(node, param.default)
+        if new_stub_default is None or default_is_too_long(new_stub_default):
+            return None
+        return new_stub_default
 
     def _infer_value_for_default(
         self, node: libcst.Param | None, runtime_default: Any
@@ -490,7 +509,11 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
                 and isinstance(subscript.slice[0].slice, libcst.Index)
             ):
                 literal_slice_contents = subscript.slice[0].slice.value
-                if infer_value_of_node(literal_slice_contents) is not NotImplemented:
+                if infer_value_of_node(
+                    literal_slice_contents
+                ) is not NotImplemented and not default_is_too_long(
+                    literal_slice_contents
+                ):
                     self.num_added += 1
                     return updated_node.with_changes(default=literal_slice_contents)
         return updated_node
