@@ -28,7 +28,6 @@ import tomli
 import typeshed_client
 from termcolor import colored
 
-
 # Defaults with a repr longer than this number will not be added.
 # This is an arbitrary value, but it's useful to have a cut-off point somewhere.
 # There's no real use case for *very* long defaults,
