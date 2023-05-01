@@ -29,9 +29,15 @@ virtual environment.
     - Add defaults to the `requests` and `babel` packages in typeshed
     - Assumes you already have these installed locally
   - `python -m stubdefaulter --typeshed-packages path/to/typeshed/stubs/requests path/to/typeshed/stubs/babel`
-    - Like the above, but also *automatically installs* the version of the
+    - Like the above, but also _automatically installs_ the version of the
       package that typeshed supports
 
 ## Limitations/TODOs
 
 - Does not add values to variables and class attributes
+
+## Changelog
+
+### Version 0.1.0 (May 1, 2023)
+
+Initial PyPI release.
