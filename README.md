@@ -18,9 +18,7 @@ Warning: The tool will import and/or install various packages. Make sure you
 trust the package you are trying to add defaults for. Please run it inside a
 virtual environment.
 
-- Install the package
-  - By cloning: `git clone https://github.com/JelleZijlstra/stubdefaulter.git`, `cd stubdefaulter` and `pip install .`; there is no PyPI package yet
-  - or by installing from GitHub directly: `pip install git+https://github.com/JelleZijlstra/stubdefaulter.git#egg=stubdefaulter`
+- Install the package by running `pip install stubdefaulter`
 - Invoke it as `python -m stubdefaulter`
 - Example invocations:
   - `python -m stubdefaulter --stdlib-path path/to/typeshed/stdlib`
