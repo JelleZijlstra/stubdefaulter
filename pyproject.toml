@@ -24,14 +24,14 @@ name = "Jelle Zijlstra, Alex Waygood"
 email = "jelle.zijlstra@gmail.com"
 
 [project.optional-dependencies]
-pyanalyze = ["pyanalyze==0.9.0"]
+pyanalyze = ["pyanalyze==0.10.1"]
 dev = [
     "stubdefaulter[pyanalyze]",
-    "black==22.12.0",            # Must match .pre-commit-config.yaml
-    "flake8-bugbear==23.1.20",
-    "flake8-noqa==1.3.0",
+    "black==23.3.0",             # Must match .pre-commit-config.yaml
+    "flake8-bugbear==23.6.5",
+    "flake8-noqa==1.3.1",
     "isort==5.12.0",             # Must match .pre-commit-config.yaml
-    "mypy==0.991",
+    "mypy==1.3.0",
     "pre-commit-hooks==4.4.0",   # Must match .pre-commit-config.yaml
     "pytest",
 ]
