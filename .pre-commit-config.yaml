@@ -12,7 +12,7 @@ repos:
         name: isort (python)
 
   - repo: https://github.com/psf/black
-    rev: 23.10.1
+    rev: 23.11.0
     hooks:
       - id: black
         language_version: python3.11
@@ -32,7 +32,7 @@ repos:
           - flake8-comprehensions
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.6.1
+    rev: v1.7.0
     hooks:
       - id: mypy
         additional_dependencies:
