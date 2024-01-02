@@ -6,13 +6,13 @@ repos:
         args: [--config=pyproject.toml]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.1 # must match pyproject.toml
+    rev: 5.13.2 # must match pyproject.toml
     hooks:
       - id: isort
         name: isort (python)
 
   - repo: https://github.com/psf/black
-    rev: 23.11.0
+    rev: 23.12.1
     hooks:
       - id: black
         language_version: python3.11
@@ -32,7 +32,7 @@ repos:
           - flake8-comprehensions
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.7.1
+    rev: v1.8.0
     hooks:
       - id: mypy
         additional_dependencies:
