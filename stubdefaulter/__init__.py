@@ -642,6 +642,11 @@ def main() -> None:
         action="store_true",
         help="Exit with code 0 even if there were errors.",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit with code 2 when changes where made.",
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -686,4 +691,13 @@ def main() -> None:
             total_num_added += num_added
     m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
     print(colored(m, "red" if errors else "green"))
-    sys.exit(1 if (errors and not args.exit_zero) else 0)
+
+    exit_code = 0
+    # Passing both `--check` and `--exit-zero` will:
+    # 1. Exit with 2 if there were changes to the source code
+    # 2. Exit with 0 if there were no changes to the source code, ignoring errors
+    if total_num_added and args.check:
+        exit_code = 2
+    if errors and not args.exit_zero:
+        exit_code = 1
+    sys.exit(exit_code)
