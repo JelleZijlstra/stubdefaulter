@@ -23,24 +23,40 @@ stubdefaulter = "stubdefaulter:main"
 name = "Jelle Zijlstra, Alex Waygood"
 email = "jelle.zijlstra@gmail.com"
 
-[project.optional-dependencies]
-pyanalyze = ["pyanalyze==0.10.1"]
-dev = [
-    "stubdefaulter[pyanalyze]",
-    "black==23.3.0",             # Must match .pre-commit-config.yaml
-    "flake8-bugbear==23.6.5",
-    "flake8-noqa==1.3.1",
-    "isort==5.12.0",             # Must match .pre-commit-config.yaml
-    "mypy==1.3.0",
-    "pre-commit-hooks==4.4.0",   # Must match .pre-commit-config.yaml
-    "pytest",
-]
+[dependency-groups]
+dev = ["mypy==1.3.0", "pytest", "pyanalyze==0.10.1"]
 
 [tool.hatch.build]
 packages = ["stubdefaulter"]
 
-[tool.isort]
-profile = "black"
-line_length = 88
-combine_as_imports = true
-skip_gitignore = true
+[tool.ruff]
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "B",
+    "C4",
+    "I",
+    "W",
+]
+ignore = [
+    # These are all enforced by, or incompatible with, Black:
+    "E203",
+    "E501",
+    "W291",
+    "W293",
+    # It's often necessary to compare types instead of using isinstance()
+    "E721",
+]
+unfixable = [
+    "F841",    # unused variable. ruff keeps the call, but mostly we want to get rid of it all
+    "F601",    # automatic fix might obscure issue
+    "F602",    # automatic fix might obscure issue
+    "B018",    # automatic fix might obscure issue
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+split-on-trailing-comma = false

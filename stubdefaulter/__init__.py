@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """
 
 Tool to add default values to stubs.
 
 """
+
+from __future__ import annotations
 
 import argparse
 import ast
