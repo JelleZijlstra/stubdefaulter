@@ -1,10 +1,4 @@
 repos:
-  - repo: https://github.com/hadialqattan/pycln
-    rev: v2.4.0
-    hooks:
-      - id: pycln
-        args: [--config=pyproject.toml]
-
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2 # must match pyproject.toml
     hooks:
