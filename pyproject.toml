@@ -24,7 +24,7 @@ name = "Jelle Zijlstra, Alex Waygood"
 email = "jelle.zijlstra@gmail.com"
 
 [dependency-groups]
-dev = ["pytest", "pyanalyze==0.10.1"]
+dev = ["pytest", "pycroscope==0.2.0"]
 
 [tool.hatch.build]
 packages = ["stubdefaulter"]

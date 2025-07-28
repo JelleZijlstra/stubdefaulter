@@ -20,4 +20,4 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
       - name: Run
-        run: PYTHONPATH=. uv run --python ${{ matrix.python-version }} -m pyanalyze --config-file pyproject.toml stubdefaulter/
+        run: PYTHONPATH=. uv run --python ${{ matrix.python-version }} -m pycroscope --config-file pyproject.toml stubdefaulter/

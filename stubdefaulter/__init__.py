@@ -235,7 +235,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             ]
             if None in members:
                 return None
-            # pyanalyze doesn't like us using lowercase type[] here on <3.9
+            # pycroscope doesn't like us using lowercase type[] here on <3.9
             libcst_cls: Type[libcst.Tuple | libcst.List]
             libcst_cls = (
                 libcst.Tuple if isinstance(runtime_default, tuple) else libcst.List
@@ -431,7 +431,7 @@ def add_defaults_to_stub_using_runtime(
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text().splitlines()
-    # pyanalyze doesn't let you use dict[] here
+    # pycroscope doesn't let you use dict[] here
     replacement_lines: Dict[int, List[str]] = {}
     total_num_added = 0
     errors = []
