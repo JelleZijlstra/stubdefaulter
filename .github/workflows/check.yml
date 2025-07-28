@@ -17,14 +17,10 @@ jobs:
     name: run tests
     strategy:
       matrix:
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+      fail-fast: false
+
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - run: pip install -e .
-      - run: pip install pytest
-      - run: python3 -m pytest test_stubdefaulter.py
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --with=pytest pytest test_stubdefaulter.py
