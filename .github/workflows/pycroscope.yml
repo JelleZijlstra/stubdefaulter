@@ -1,4 +1,4 @@
-name: Pyanalyze
+name: Pycroscope
 
 on:
   workflow_dispatch:
