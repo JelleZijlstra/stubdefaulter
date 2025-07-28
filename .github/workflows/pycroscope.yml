@@ -1,4 +1,4 @@
-name: tests
+name: Pycroscope
 
 on:
   workflow_dispatch:
@@ -7,14 +7,9 @@ on:
       - main
   pull_request:
 
-env:
-  FORCE_COLOR: 1
-  PY_COLORS: 1
-
 jobs:
-  tests:
+  main:
     runs-on: ubuntu-latest
-    name: run tests
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
@@ -22,4 +17,4 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: astral-sh/setup-uv@v6
-      - run: uv run --python=${{ matrix.python-version }} pytest test_stubdefaulter.py
+      - run: PYTHONPATH=. uv run --python ${{ matrix.python-version }} -m pycroscope --config-file pyproject.toml stubdefaulter/
