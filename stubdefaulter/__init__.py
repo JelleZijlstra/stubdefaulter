@@ -18,10 +18,11 @@ import sys
 import textwrap
 import types
 import typing
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Sequence, Tuple, Type, Union, cast
+from typing import Any, cast
 
 import libcst
 import tomli
@@ -102,7 +103,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
     stub_params: libcst.Parameters
     num_added: int = 0
-    errors: List[Tuple[str, object, object]] = field(default_factory=list)
+    errors: list[tuple[str, object, object]] = field(default_factory=list)
 
     def get_matching_runtime_parameter(
         self, node: libcst.Param
@@ -236,7 +237,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             if None in members:
                 return None
             # pycroscope doesn't like us using lowercase type[] here on <3.9
-            libcst_cls: Type[libcst.Tuple | libcst.List]
+            libcst_cls: type[libcst.Tuple | libcst.List]
             libcst_cls = (
                 libcst.Tuple if isinstance(runtime_default, tuple) else libcst.List
             )
@@ -310,16 +311,9 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
 
 
 def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
-    if sys.version_info >= (3, 8):
-        assert hasattr(node, "end_lineno")
-        assert node.end_lineno is not None
-        return node.end_lineno
-    else:
-        return max(
-            child.lineno
-            for child in ast.iter_child_nodes(node)
-            if hasattr(child, "lineno")
-        )
+    assert hasattr(node, "end_lineno")
+    assert node.end_lineno is not None
+    return node.end_lineno
 
 
 def replace_defaults_in_func(
@@ -358,7 +352,7 @@ def gather_funcs(
     fullname: str,
     runtime_parent: type | types.ModuleType,
     blacklisted_objects: frozenset[str],
-) -> Iterator[Tuple[Union[ast.FunctionDef, ast.AsyncFunctionDef], Any]]:
+) -> Iterator[tuple[ast.FunctionDef | ast.AsyncFunctionDef, Any]]:
     if fullname in blacklisted_objects:
         log(f"Skipping {fullname}: blacklisted object")
         return
@@ -432,7 +426,7 @@ def add_defaults_to_stub_using_runtime(
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text(encoding="utf-8").splitlines()
     # pycroscope doesn't let you use dict[] here
-    replacement_lines: Dict[int, List[str]] = {}
+    replacement_lines: dict[int, list[str]] = {}
     total_num_added = 0
     errors = []
     for name, info in stub_names.items():
@@ -561,7 +555,7 @@ def is_relative_to(left: Path, right: Path) -> bool:
 
 
 def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
-    to_install: List[str] = []
+    to_install: list[str] = []
     for path in typeshed_paths:
         metadata_path = path / "METADATA.toml"
         if not metadata_path.exists():

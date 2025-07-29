@@ -47,6 +47,7 @@ select = [
     "C4",
     "I",
     "W",
+    "UP",
 ]
 ignore = [
     # These are all enforced by, or incompatible with, Black:
@@ -56,6 +57,9 @@ ignore = [
     "W293",
     # It's often necessary to compare types instead of using isinstance()
     "E721",
+    # Makes code slower and more verbose
+    # https://github.com/astral-sh/ruff/issues/7871
+    "UP038",
 ]
 unfixable = [
     "F841",    # unused variable. ruff keeps the call, but mostly we want to get rid of it all
