@@ -479,7 +479,6 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
             return (
                 isinstance(subscript_value.value, libcst.Name)
                 and subscript_value.value.value in {"typing", "typing_extensions"}
-                and isinstance(subscript_value.attr, libcst.Name)
                 and subscript_value.attr.value == "Literal"
             )
         return False
@@ -502,10 +501,8 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
             annotation.annotation, libcst.Subscript
         ) and self.node_represents_subscripted_Literal(annotation.annotation):
             subscript = annotation.annotation
-            if (
-                len(subscript.slice) == 1
-                and isinstance(subscript.slice[0], libcst.SubscriptElement)
-                and isinstance(subscript.slice[0].slice, libcst.Index)
+            if len(subscript.slice) == 1 and isinstance(
+                subscript.slice[0].slice, libcst.Index
             ):
                 literal_slice_contents = subscript.slice[0].slice.value
                 if infer_value_of_node(
