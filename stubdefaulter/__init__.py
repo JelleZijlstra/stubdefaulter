@@ -236,7 +236,6 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             ]
             if None in members:
                 return None
-            # pycroscope doesn't like us using lowercase type[] here on <3.9
             libcst_cls: type[libcst.Tuple | libcst.List]
             libcst_cls = (
                 libcst.Tuple if isinstance(runtime_default, tuple) else libcst.List
@@ -311,7 +310,6 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
 
 
 def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
-    assert hasattr(node, "end_lineno")
     assert node.end_lineno is not None
     return node.end_lineno
 
@@ -425,7 +423,6 @@ def add_defaults_to_stub_using_runtime(
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text(encoding="utf-8").splitlines()
-    # pycroscope doesn't let you use dict[] here
     replacement_lines: dict[int, list[str]] = {}
     total_num_added = 0
     errors = []
