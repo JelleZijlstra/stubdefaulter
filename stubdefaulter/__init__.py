@@ -430,7 +430,7 @@ def add_defaults_to_stub_using_runtime(
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
-    stub_lines = path.read_text().splitlines()
+    stub_lines = path.read_text(encoding="utf-8").splitlines()
     # pyanalyze doesn't let you use dict[] here
     replacement_lines: Dict[int, List[str]] = {}
     total_num_added = 0
@@ -454,7 +454,7 @@ def add_defaults_to_stub_using_runtime(
                 print(colored(message, "red"))
             replacement_lines.update(new_lines)
             total_num_added += num_added
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for i, line in enumerate(stub_lines):
             if i in replacement_lines:
                 for new_line in replacement_lines[i]:
@@ -524,12 +524,12 @@ def add_defaults_to_stub_using_annotations(
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     cst = libcst.parse_module(source)
     visitor = ReplaceEllipsesUsingAnnotations()
     modified_cst = cst.visit(visitor)
     if visitor.num_added > 0:
-        path.write_text(modified_cst.code)
+        path.write_text(modified_cst.code, encoding="utf-8")
     return visitor.num_added
 
 
@@ -570,7 +570,7 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
         if not metadata_path.exists():
             print(f"{path} does not look like a typeshed package", file=sys.stderr)
             sys.exit(1)
-        metadata_bytes = metadata_path.read_text()
+        metadata_bytes = metadata_path.read_text(encoding="utf-8")
         metadata = tomli.loads(metadata_bytes)
         version = metadata["version"]
         to_install.append(f"{path.name}=={version}")
@@ -590,7 +590,7 @@ STDLIB_MODULE_BLACKLIST = ("_typeshed/*.pyi", "antigravity.pyi")
 
 
 def load_blacklist(path: Path) -> frozenset[str]:
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         entries = frozenset(line.split("#")[0].strip() for line in f)
     return entries - {""}
 
