@@ -29,6 +29,13 @@ dev = ["pytest", "pycroscope==0.2.0"]
 [tool.hatch.build]
 packages = ["stubdefaulter"]
 
+[tool.mypy]
+show_traceback = true
+pretty = true
+strict = true
+enable_error_code = 'ignore-without-code,redundant-expr,possibly-undefined'
+warn_unreachable = true
+
 [tool.ruff]
 fix = true
 
@@ -40,6 +47,7 @@ select = [
     "C4",
     "I",
     "W",
+    "UP",
 ]
 ignore = [
     # These are all enforced by, or incompatible with, Black:
@@ -49,6 +57,9 @@ ignore = [
     "W293",
     # It's often necessary to compare types instead of using isinstance()
     "E721",
+    # Makes code slower and more verbose
+    # https://github.com/astral-sh/ruff/issues/7871
+    "UP038",
 ]
 unfixable = [
     "F841",    # unused variable. ruff keeps the call, but mostly we want to get rid of it all
