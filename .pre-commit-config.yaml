@@ -21,12 +21,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - types-requests
-          - aiohttp
           - termcolor
           - libcst
           - typeshed_client
           - pytest
+          - tomli
 
 ci:
   autofix_commit_msg: "[pre-commit.ci] auto fixes from pre-commit.com hooks"
