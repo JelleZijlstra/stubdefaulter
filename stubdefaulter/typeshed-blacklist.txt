@@ -1,0 +1,8 @@
+# Functions in the typeshed third-party packages for which we should not add defaults
+
+# Defaults are OS-dependent
+keyboard.mouse.on_button
+keyboard.mouse.wait
+
+# Something weird, different defaults in some subclasses?
+gevent._ffi.loop.AbstractLoop.break_
