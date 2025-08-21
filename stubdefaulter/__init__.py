@@ -314,6 +314,17 @@ def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     return node.end_lineno
 
 
+def get_start_lineno(node: ast.AST) -> int:
+    linenos: list[int] = []
+    for subnode in ast.walk(node):
+        lineno = getattr(subnode, "lineno", None)
+        if lineno is not None:
+            linenos.append(lineno)
+    if not linenos:
+        raise ValueError("Node has no lineno attribute")
+    return min(linenos)
+
+
 def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -369,6 +380,9 @@ def add_slots_to_class(
     runtime_slots = runtime_cls.__dict__.get("__slots__")
     if runtime_slots is None:
         return 0
+    if isinstance(getattr(runtime_cls, "_fields", None), tuple):
+        # Probably a namedtuple, which always have empty __slots__. Not interesting.
+        return 0
     for stmt in node.body:
         if isinstance(stmt, ast.Assign):
             if any(
@@ -383,7 +397,7 @@ def add_slots_to_class(
     new_line = " " * indentation + f"__slots__ = {repr(runtime_slots)}"
 
     if len(node.body) == 1 and is_ellipsis_stmt(node.body[0]):
-        line_index = node.body[0].lineno - 1
+        line_index = get_start_lineno(node.body[0]) - 1
         class_line = stub_lines[line_index]
         header = class_line.split(":")[0] + ":"
         replacement_lines[line_index] = [header, new_line]
@@ -394,7 +408,7 @@ def add_slots_to_class(
         assert doc.end_lineno is not None
         line_index = doc.end_lineno
     elif node.body:
-        line_index = node.body[0].lineno - 1
+        line_index = get_start_lineno(node.body[0]) - 1
     else:
         line_index = node.lineno
 
