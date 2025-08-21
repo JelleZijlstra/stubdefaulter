@@ -289,6 +289,7 @@ def test_stubdefaulter() -> None:
             typeshed_client.finder.get_search_context(search_path=[td]),
             frozenset(),
             slots=True,
+            add_complex_defaults=True,
         )
         assert stub_path.read_text() == EXPECTED_STUB
         assert len(errors) == 1
@@ -299,6 +300,7 @@ def test_stubdefaulter() -> None:
             typeshed_client.finder.get_search_context(search_path=[td]),
             frozenset(),
             slots=True,
+            add_complex_defaults=True,
         )
         assert stub_path.read_text() == EXPECTED_STUB.replace(
             "wrong: int = 1", "wrong: int = 0"
