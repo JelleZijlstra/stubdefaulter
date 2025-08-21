@@ -290,7 +290,7 @@ def test_stubdefaulter() -> None:
             add_complex_defaults=True,
             blacklisted_objects=frozenset(),
         )
-        errors, _, _ = stubdefaulter.add_defaults_to_stub(
+        errors = stubdefaulter.run_on_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
             config=config,
@@ -302,7 +302,7 @@ def test_stubdefaulter() -> None:
         assert stubdefaulter.MISSING_SLOTS in codes
 
         stub_path.write_text(INPUT_STUB.replace(" = 1", " = ..."))
-        errors, _, _ = stubdefaulter.add_defaults_to_stub(
+        errors = stubdefaulter.run_on_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
             config=config,

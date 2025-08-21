@@ -19,7 +19,7 @@ import sys
 import textwrap
 import types
 import typing
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
@@ -28,6 +28,7 @@ from typing import Any, cast
 import libcst
 import tomli
 import typeshed_client.finder
+from libcst.metadata import MetadataWrapper, PositionProvider
 from termcolor import colored
 
 # Defaults with a repr longer than this number will not be added.
@@ -58,6 +59,9 @@ class Config:
 class LintError:
     code: str
     message: str
+    filename: str
+    line: int
+    fixed: bool = False
 
 
 def default_is_too_long(default: libcst.BaseExpression) -> bool:
@@ -149,10 +153,12 @@ def is_complex_default(value: object, *, allow_containers: bool = True) -> bool:
 
 @dataclass
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
+    METADATA_DEPENDENCIES = (PositionProvider,)
     sig: inspect.Signature
     stub_params: libcst.Parameters
     config: Config
-    num_added: int = 0
+    file_path: str
+    base_line_offset: int
     errors: list[LintError] = field(default_factory=list)
 
     def get_matching_runtime_parameter(
@@ -348,14 +354,18 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         if isinstance(original_node.default, libcst.Ellipsis):
             if MISSING_DEFAULT in self.config.enabled_errors:
                 runtime_value = infer_value_of_node(inferred_default)
+                fix_applied = bool(self.config.apply_fixes)
+                pos = self.get_metadata(PositionProvider, original_node)
                 self.errors.append(
                     LintError(
                         MISSING_DEFAULT,
                         f"parameter {param_name} missing default {runtime_value!r}",
+                        filename=self.file_path,
+                        line=self.base_line_offset + pos.start.line,
+                        fixed=fix_applied,
                     )
                 )
-                if self.config.apply_fixes:
-                    self.num_added += 1
+                if fix_applied:
                     return updated_node.with_changes(default=inferred_default)
             return updated_node
         else:
@@ -367,14 +377,18 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 existing_value
             ):
                 if WRONG_DEFAULT in self.config.enabled_errors:
+                    fix_applied = bool(self.config.apply_fixes)
+                    pos = self.get_metadata(PositionProvider, original_node)
                     self.errors.append(
                         LintError(
                             WRONG_DEFAULT,
                             f"parameter {param_name}: stub default {existing_value!r} != runtime default {inferred_value!r}",
+                            filename=self.file_path,
+                            line=self.base_line_offset + pos.start.line,
+                            fixed=fix_applied,
                         )
                     )
-                    if self.config.apply_fixes:
-                        self.num_added += 1
+                    if fix_applied:
                         return updated_node.with_changes(default=inferred_default)
             return updated_node
 
@@ -401,11 +415,12 @@ def replace_defaults_in_func(
     runtime_func: Any,
     *,
     config: Config,
-) -> tuple[int, list[LintError], dict[int, list[str]]]:
+    path: Path,
+) -> tuple[list[LintError], dict[int, list[str]]]:
     try:
         sig = inspect.signature(runtime_func)
     except Exception:
-        return 0, [], {}
+        return [], {}
     end_lineno = get_end_lineno(node)
     lines = stub_lines[node.lineno - 1 : end_lineno]
     indentation = len(lines[0]) - len(lines[0].lstrip())
@@ -413,18 +428,24 @@ def replace_defaults_in_func(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
     assert isinstance(cst, libcst.FunctionDef)
-    visitor = ReplaceEllipsesUsingRuntime(sig, cst.params, config=config)
-    modified = cst.visit(visitor)
-    assert isinstance(modified, libcst.FunctionDef)
+    # Wrap a synthetic module to enable metadata and transformations
+    module = libcst.Module(body=[cst])
+    wrapper = MetadataWrapper(module)
+    visitor = ReplaceEllipsesUsingRuntime(
+        sig,
+        cst.params,
+        config=config,
+        file_path=str(path),
+        base_line_offset=node.lineno - 1,
+    )
+    modified_module = wrapper.visit(visitor)
     output_dict: dict[int, list[str]] = {}
-    if config.apply_fixes and visitor.num_added:
-        new_code = textwrap.indent(
-            libcst.Module(body=[modified]).code, " " * indentation
-        )
+    if config.apply_fixes and any(error.fixed for error in visitor.errors):
+        new_code = textwrap.indent(modified_module.code, " " * indentation)
         output_dict = {node.lineno - 1: new_code.splitlines()}
         for i in range(node.lineno, end_lineno):
             output_dict[i] = []
-    return visitor.num_added, visitor.errors, output_dict
+    return visitor.errors, output_dict
 
 
 def is_ellipsis_stmt(node: ast.stmt) -> bool:
@@ -451,26 +472,33 @@ def add_slots_to_class(
     *,
     config: Config,
     qualname: str,
-) -> tuple[int, list[LintError]]:
+    path: Path,
+) -> Iterable[LintError]:
+    if MISSING_SLOTS not in config.enabled_errors:
+        return
     runtime_slots = runtime_cls.__dict__.get("__slots__")
     if runtime_slots is None:
-        return 0, []
+        return
     if isinstance(getattr(runtime_cls, "_fields", None), tuple):
         # Probably a namedtuple, which always have empty __slots__. Not interesting.
-        return 0, []
+        return
     for stmt in node.body:
         if isinstance(stmt, ast.Assign):
             if any(
                 isinstance(target, ast.Name) and target.id == "__slots__"
                 for target in stmt.targets
             ):
-                return 0, []
+                return
 
-    errors: list[LintError] = []
-    if MISSING_SLOTS in config.enabled_errors:
-        errors.append(LintError(MISSING_SLOTS, f"{qualname} missing __slots__"))
-        if not config.apply_fixes:
-            return 0, errors
+    yield LintError(
+        MISSING_SLOTS,
+        f"{qualname} missing __slots__",
+        filename=str(path),
+        line=node.lineno,
+        fixed=bool(config.apply_fixes),
+    )
+    if not config.apply_fixes:
+        return
 
     indentation = (
         len(stub_lines[node.lineno - 1]) - len(stub_lines[node.lineno - 1].lstrip()) + 4
@@ -482,7 +510,7 @@ def add_slots_to_class(
         class_line = stub_lines[line_index]
         header = class_line.split(":")[0] + ":"
         replacement_lines[line_index] = [header, new_line]
-        return 1, errors
+        return
 
     if node.body and is_docstring_stmt(node.body[0]):
         doc = node.body[0]
@@ -500,7 +528,6 @@ def add_slots_to_class(
             replacement_lines[line_index] = [new_line, stub_lines[line_index]]
         else:
             replacement_lines[line_index] = [new_line]
-    return 1, errors
 
 
 def gather_classes(
@@ -551,7 +578,7 @@ def gather_funcs(
     fullname: str,
     runtime_parent: type | types.ModuleType,
     blacklisted_objects: frozenset[str],
-) -> Iterator[tuple[ast.FunctionDef | ast.AsyncFunctionDef, Any, str]]:
+) -> Iterator[tuple[ast.FunctionDef | ast.AsyncFunctionDef, Any]]:
     if fullname in blacklisted_objects:
         log(f"Skipping {fullname}: blacklisted object")
         return
@@ -596,14 +623,14 @@ def gather_funcs(
     elif isinstance(node.ast, typeshed_client.OverloadedName):
         for definition in node.ast.definitions:
             if isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield definition, runtime, fullname
+                yield definition, runtime
     elif isinstance(node.ast, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        yield node.ast, runtime, fullname
+        yield node.ast, runtime
 
 
-def add_defaults_to_stub_using_runtime(
+def run_checks_with_runtime(
     module_name: str, context: typeshed_client.finder.SearchContext, *, config: Config
-) -> tuple[list[LintError], int, int]:
+) -> Iterable[LintError]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -617,15 +644,12 @@ def add_defaults_to_stub_using_runtime(
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
         log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
-        return [], 0, 0
+        return
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text(encoding="utf-8").splitlines()
     replacement_lines: dict[int, list[str]] = {}
-    num_defaults_added = 0
-    num_slots_added = 0
-    errors: list[LintError] = []
     for name, info in stub_names.items():
         funcs = gather_funcs(
             node=info,
@@ -635,17 +659,13 @@ def add_defaults_to_stub_using_runtime(
             blacklisted_objects=config.blacklisted_objects,
         )
 
-        for func, runtime_func, qualname in funcs:
-            num_added, new_errors, new_lines = replace_defaults_in_func(
-                stub_lines, func, runtime_func, config=config
+        for func, runtime_func in funcs:
+            new_errors, new_lines = replace_defaults_in_func(
+                stub_lines, func, runtime_func, config=config, path=path
             )
-            for error in new_errors:
-                message = f"{qualname}: {error.message}"
-                errors.append(LintError(error.code, message))
-                print(colored(f"{qualname}: [{error.code}] {error.message}", "red"))
+            yield from new_errors
             if new_lines:
                 replacement_lines.update(new_lines)
-            num_defaults_added += num_added
     if MISSING_SLOTS in config.enabled_errors:
         for name, info in stub_names.items():
             classes = gather_classes(
@@ -656,16 +676,15 @@ def add_defaults_to_stub_using_runtime(
                 blacklisted_objects=config.blacklisted_objects,
             )
             for class_node, runtime_cls, qualname in classes:
-                slots_added, slot_errors = add_slots_to_class(
+                yield from add_slots_to_class(
                     stub_lines,
                     class_node,
                     runtime_cls,
                     replacement_lines,
                     config=config,
                     qualname=qualname,
+                    path=path,
                 )
-                errors.extend(slot_errors)
-                num_slots_added += slots_added
     if config.apply_fixes and replacement_lines:
         with path.open("w", encoding="utf-8") as f:
             for i, line in enumerate(stub_lines):
@@ -674,13 +693,13 @@ def add_defaults_to_stub_using_runtime(
                         f.write(new_line + "\n")
                 else:
                     f.write(line + "\n")
-    return errors, num_defaults_added, num_slots_added
 
 
 @dataclass
-class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
+class StubOnlyVisitor(libcst.CSTTransformer):
+    METADATA_DEPENDENCIES = (PositionProvider,)
     config: Config
-    num_added: int = 0
+    file_path: str
     errors: list[LintError] = field(default_factory=list)
 
     @staticmethod
@@ -730,55 +749,50 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
             return updated_node
         if MISSING_DEFAULT in self.config.enabled_errors:
             runtime_value = infer_value_of_node(new_default)
+            fix_applied = bool(self.config.apply_fixes)
+            # Use metadata to report accurate source line
+            pos = self.get_metadata(PositionProvider, original_node)
             self.errors.append(
                 LintError(
                     MISSING_DEFAULT,
                     f"parameter {original_node.name.value} missing default {runtime_value!r}",
+                    filename=self.file_path,
+                    line=pos.start.line,
+                    fixed=fix_applied,
                 )
             )
-            if self.config.apply_fixes:
-                self.num_added += 1
+            if fix_applied:
                 return updated_node.with_changes(default=new_default)
         return updated_node
 
 
-def add_defaults_to_stub_using_annotations(
+def run_checks_without_runtime(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     *,
     config: Config,
-) -> tuple[list[LintError], int]:
+) -> list[LintError]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
     source = path.read_text(encoding="utf-8")
     cst = libcst.parse_module(source)
-    visitor = ReplaceEllipsesUsingAnnotations(config=config)
-    modified_cst = cst.visit(visitor)
-    if config.apply_fixes and visitor.num_added > 0:
+    wrapper = MetadataWrapper(cst)
+    visitor = StubOnlyVisitor(config=config, file_path=str(path))
+    modified_cst = wrapper.visit(visitor)
+    if config.apply_fixes and any(error.fixed for error in visitor.errors):
         path.write_text(modified_cst.code, encoding="utf-8")
-    return visitor.errors, visitor.num_added
+    return visitor.errors
 
 
-def add_defaults_to_stub(
+def run_on_stub(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     *,
     config: Config,
-) -> tuple[list[LintError], int, int]:
-    print(f"Processing {module_name}... ", end="", flush=True)
-    ann_errors, num_added_using_annotations = add_defaults_to_stub_using_annotations(
-        module_name,
-        context,
-        config=config,
-    )
-    runtime_errors, num_added_using_runtime, num_slots_added = (
-        add_defaults_to_stub_using_runtime(module_name, context, config=config)
-    )
-    errors = ann_errors + runtime_errors
-    total_num_added = num_added_using_annotations + num_added_using_runtime
-    print(f"added {total_num_added} defaults and {num_slots_added} slots")
-    return errors, total_num_added, num_slots_added
+) -> Iterable[LintError]:
+    yield from run_checks_without_runtime(module_name, context, config=config)
+    yield from run_checks_with_runtime(module_name, context, config=config)
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -895,11 +909,6 @@ def main() -> None:
         help="Exit with code 2 when changes where made.",
     )
     parser.add_argument(
-        "--slots",
-        action="store_true",
-        help="Add __slots__ to the stubs in addition to deafults.",
-    )
-    parser.add_argument(
         "--add-complex-defaults",
         action="store_true",
         help=(
@@ -946,8 +955,7 @@ def main() -> None:
         add_complex_defaults=args.add_complex_defaults,
         blacklisted_objects=combined_blacklist,
     )
-    num_defaults_added = 0
-    num_slots_added = 0
+    # Counts removed; rely on collected errors and their `fixed` status
     for module, path in typeshed_client.get_all_stub_files(context):
         if stdlib_path is not None and is_relative_to(path, stdlib_path):
             if any(
@@ -957,30 +965,28 @@ def main() -> None:
                 log(f"Skipping {module}: blacklisted module")
                 continue
             else:
-                these_errors, num_defaults, num_slots = add_defaults_to_stub(
-                    module,
-                    context,
-                    config=config,
-                )
-                errors += these_errors
-                num_defaults_added += num_defaults
-                num_slots_added += num_slots
-        elif any(is_relative_to(path, p) for p in package_paths):
-            these_errors, num_defaults, num_slots = add_defaults_to_stub(
-                module, context, config=config
-            )
-            errors += these_errors
-            num_defaults_added += num_defaults
-            num_slots_added += num_slots
-    m = f"\n--- Added {num_defaults_added} defaults and {num_slots_added} slots; encountered {len(errors)} errors ---"
-    print(colored(m, "red" if errors else "green"))
+                errors += run_on_stub(module, context, config=config)
 
-    exit_code = 0
-    # Passing both `--check` and `--exit-zero` will:
-    # 1. Exit with 2 if there were changes to the source code
-    # 2. Exit with 0 if there were no changes to the source code, ignoring errors
-    if (num_defaults_added or num_slots_added) and args.check:
+        elif any(is_relative_to(path, p) for p in package_paths):
+            errors += run_on_stub(module, context, config=config)
+
+    # Print collected lint results: green if fixed, red if not
+    for e in errors:
+        text = f"{e.filename}:{e.line}: [{e.code}] {e.message}"
+        print(colored(text, "green" if e.fixed else "red"))
+    # Print summary per error code
+    print("\nSummary:")
+    for code in sorted(enabled_errors):
+        total = sum(1 for err in errors if err.code == code)
+        fixed = sum(1 for err in errors if err.code == code and err.fixed)
+        print(f"- {code}: {total} errors ({fixed} fixed)")
+
+    # Determine exit code
+    changed = any(e.fixed for e in errors)
+    if args.check and changed:
         exit_code = 2
-    if errors and not args.exit_zero:
+    elif errors and not args.exit_zero:
         exit_code = 1
+    else:
+        exit_code = 0
     sys.exit(exit_code)
