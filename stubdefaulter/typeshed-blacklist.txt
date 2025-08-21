@@ -9,3 +9,4 @@ gevent._ffi.loop.AbstractLoop.break_
 
 # Default is dynamic
 yt_dlp.utils._utils.encode_compat_str
+jsonschema.cli.main
