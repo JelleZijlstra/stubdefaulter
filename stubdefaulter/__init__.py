@@ -347,7 +347,7 @@ def replace_defaults_in_func(
 def is_ellipsis_stmt(node: ast.stmt) -> bool:
     return (
         isinstance(node, ast.Expr)
-        and isinstance(getattr(node, "value", None), ast.Constant)
+        and isinstance(node.value, ast.Constant)
         and node.value.value is Ellipsis
     )
 
@@ -355,7 +355,7 @@ def is_ellipsis_stmt(node: ast.stmt) -> bool:
 def is_docstring_stmt(node: ast.stmt) -> bool:
     return (
         isinstance(node, ast.Expr)
-        and isinstance(getattr(node, "value", None), ast.Constant)
+        and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
     )
 
@@ -414,7 +414,7 @@ def gather_classes(
     fullname: str,
     runtime_parent: type | types.ModuleType,
     blacklisted_objects: frozenset[str],
-) -> Iterator[tuple[ast.ClassDef, Any]]:
+) -> Iterator[tuple[ast.ClassDef, type[object]]]:
     if fullname in blacklisted_objects:
         log(f"Skipping {fullname}: blacklisted object")
         return
@@ -430,22 +430,24 @@ def gather_classes(
     except Exception:
         log("Could not find", fullname, "at runtime")
         return
-    yield node.ast, runtime
-    for child_name, child_node in node.child_nodes.items():
-        if child_name.startswith("__") and not child_name.endswith("__"):
-            unmangled_parent_name = fullname.split(".")[-1]
-            maybe_mangled_child_name = (
-                f"_{unmangled_parent_name.lstrip('_')}{child_name}"
+    if isinstance(runtime, type):
+        yield node.ast, runtime
+    if node.child_nodes is not None:
+        for child_name, child_node in node.child_nodes.items():
+            if child_name.startswith("__") and not child_name.endswith("__"):
+                unmangled_parent_name = fullname.split(".")[-1]
+                maybe_mangled_child_name = (
+                    f"_{unmangled_parent_name.lstrip('_')}{child_name}"
+                )
+            else:
+                maybe_mangled_child_name = child_name
+            yield from gather_classes(
+                node=child_node,
+                name=maybe_mangled_child_name,
+                fullname=f"{fullname}.{child_name}",
+                runtime_parent=runtime,
+                blacklisted_objects=blacklisted_objects,
             )
-        else:
-            maybe_mangled_child_name = child_name
-        yield from gather_classes(
-            node=child_node,
-            name=maybe_mangled_child_name,
-            fullname=f"{fullname}.{child_name}",
-            runtime_parent=runtime,
-            blacklisted_objects=blacklisted_objects,
-        )
 
 
 def gather_funcs(
