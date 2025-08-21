@@ -4,7 +4,7 @@ from pathlib import Path
 
 import libcst
 import pytest
-import typeshed_client
+import typeshed_client.finder
 
 import stubdefaulter
 
@@ -284,14 +284,16 @@ def test_stubdefaulter() -> None:
         (pkg_path / "__init__.py").write_text(PY_FILE)
         (pkg_path / "py.typed").write_text("typed\n")
 
+        config = stubdefaulter.Config(
+            enabled_errors=stubdefaulter.ALL_ERROR_CODES,
+            apply_fixes=True,
+            add_complex_defaults=True,
+            blacklisted_objects=frozenset(),
+        )
         errors, _, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
-            frozenset(),
-            slots=True,
-            add_complex_defaults=True,
-            enabled_errors=stubdefaulter.ALL_ERROR_CODES,
-            apply_fixes=True,
+            config=config,
         )
         assert stub_path.read_text() == EXPECTED_STUB
         codes = {e.code for e in errors}
@@ -303,11 +305,7 @@ def test_stubdefaulter() -> None:
         errors, _, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
-            frozenset(),
-            slots=True,
-            add_complex_defaults=True,
-            enabled_errors=stubdefaulter.ALL_ERROR_CODES,
-            apply_fixes=True,
+            config=config,
         )
         assert stub_path.read_text() == EXPECTED_STUB
         codes = {e.code for e in errors}

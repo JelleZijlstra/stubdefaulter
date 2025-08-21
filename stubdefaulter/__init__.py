@@ -27,7 +27,7 @@ from typing import Any, cast
 
 import libcst
 import tomli
-import typeshed_client
+import typeshed_client.finder
 from termcolor import colored
 
 # Defaults with a repr longer than this number will not be added.
@@ -41,7 +41,17 @@ DEFAULT_LENGTH_LIMIT = 500
 MISSING_DEFAULT = "missing-default"
 WRONG_DEFAULT = "wrong-default"
 MISSING_SLOTS = "missing-slots"
-ALL_ERROR_CODES = {MISSING_DEFAULT, WRONG_DEFAULT, MISSING_SLOTS}
+ALL_ERROR_CODES = frozenset({MISSING_DEFAULT, WRONG_DEFAULT, MISSING_SLOTS})
+
+
+@dataclass(frozen=True)
+class Config:
+    """Configuration for the stubdefaulter tool."""
+
+    add_complex_defaults: bool
+    enabled_errors: frozenset[str]
+    apply_fixes: bool
+    blacklisted_objects: frozenset[str]
 
 
 @dataclass
@@ -141,9 +151,7 @@ def is_complex_default(value: object, *, allow_containers: bool = True) -> bool:
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
     stub_params: libcst.Parameters
-    add_complex_defaults: bool = False
-    apply_fixes: bool = False
-    enabled_errors: frozenset[str] = frozenset()
+    config: Config
     num_added: int = 0
     errors: list[LintError] = field(default_factory=list)
 
@@ -229,7 +237,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return None
         if param.default is inspect.Parameter.empty:
             return None
-        if (not self.add_complex_defaults) and is_complex_default(param.default):
+        if (not self.config.add_complex_defaults) and is_complex_default(param.default):
             return None
         new_stub_default = self._infer_value_for_default(node, param.default)
         if new_stub_default is None or default_is_too_long(new_stub_default):
@@ -338,7 +346,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return updated_node
         param_name = original_node.name.value
         if isinstance(original_node.default, libcst.Ellipsis):
-            if MISSING_DEFAULT in self.enabled_errors:
+            if MISSING_DEFAULT in self.config.enabled_errors:
                 runtime_value = infer_value_of_node(inferred_default)
                 self.errors.append(
                     LintError(
@@ -346,7 +354,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                         f"parameter {param_name} missing default {runtime_value!r}",
                     )
                 )
-                if self.apply_fixes:
+                if self.config.apply_fixes:
                     self.num_added += 1
                     return updated_node.with_changes(default=inferred_default)
             return updated_node
@@ -358,14 +366,14 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             if existing_value != inferred_value or type(inferred_value) is not type(
                 existing_value
             ):
-                if WRONG_DEFAULT in self.enabled_errors:
+                if WRONG_DEFAULT in self.config.enabled_errors:
                     self.errors.append(
                         LintError(
                             WRONG_DEFAULT,
                             f"parameter {param_name}: stub default {existing_value!r} != runtime default {inferred_value!r}",
                         )
                     )
-                    if self.apply_fixes:
+                    if self.config.apply_fixes:
                         self.num_added += 1
                         return updated_node.with_changes(default=inferred_default)
             return updated_node
@@ -392,9 +400,7 @@ def replace_defaults_in_func(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     runtime_func: Any,
     *,
-    add_complex_defaults: bool = False,
-    enabled_errors: frozenset[str] = frozenset(),
-    apply_fixes: bool = False,
+    config: Config,
 ) -> tuple[int, list[LintError], dict[int, list[str]]]:
     try:
         sig = inspect.signature(runtime_func)
@@ -407,17 +413,11 @@ def replace_defaults_in_func(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
     assert isinstance(cst, libcst.FunctionDef)
-    visitor = ReplaceEllipsesUsingRuntime(
-        sig,
-        cst.params,
-        add_complex_defaults=add_complex_defaults,
-        enabled_errors=enabled_errors,
-        apply_fixes=apply_fixes,
-    )
+    visitor = ReplaceEllipsesUsingRuntime(sig, cst.params, config=config)
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     output_dict: dict[int, list[str]] = {}
-    if apply_fixes and visitor.num_added:
+    if config.apply_fixes and visitor.num_added:
         new_code = textwrap.indent(
             libcst.Module(body=[modified]).code, " " * indentation
         )
@@ -449,8 +449,7 @@ def add_slots_to_class(
     runtime_cls: type,
     replacement_lines: dict[int, list[str]],
     *,
-    enabled_errors: frozenset[str] = frozenset(),
-    apply_fixes: bool = False,
+    config: Config,
     qualname: str,
 ) -> tuple[int, list[LintError]]:
     runtime_slots = runtime_cls.__dict__.get("__slots__")
@@ -468,9 +467,9 @@ def add_slots_to_class(
                 return 0, []
 
     errors: list[LintError] = []
-    if MISSING_SLOTS in enabled_errors:
+    if MISSING_SLOTS in config.enabled_errors:
         errors.append(LintError(MISSING_SLOTS, f"{qualname} missing __slots__"))
-        if not apply_fixes:
+        if not config.apply_fixes:
             return 0, errors
 
     indentation = (
@@ -603,14 +602,7 @@ def gather_funcs(
 
 
 def add_defaults_to_stub_using_runtime(
-    module_name: str,
-    context: typeshed_client.finder.SearchContext,
-    blacklisted_objects: frozenset[str],
-    *,
-    slots: bool = False,
-    add_complex_defaults: bool = False,
-    enabled_errors: frozenset[str] = frozenset(),
-    apply_fixes: bool = False,
+    module_name: str, context: typeshed_client.finder.SearchContext, *, config: Config
 ) -> tuple[list[LintError], int, int]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
@@ -640,17 +632,12 @@ def add_defaults_to_stub_using_runtime(
             name=name,
             fullname=f"{module_name}.{name}",
             runtime_parent=runtime_module,
-            blacklisted_objects=blacklisted_objects,
+            blacklisted_objects=config.blacklisted_objects,
         )
 
         for func, runtime_func, qualname in funcs:
             num_added, new_errors, new_lines = replace_defaults_in_func(
-                stub_lines,
-                func,
-                runtime_func,
-                add_complex_defaults=add_complex_defaults,
-                enabled_errors=enabled_errors,
-                apply_fixes=apply_fixes,
+                stub_lines, func, runtime_func, config=config
             )
             for error in new_errors:
                 message = f"{qualname}: {error.message}"
@@ -659,14 +646,14 @@ def add_defaults_to_stub_using_runtime(
             if new_lines:
                 replacement_lines.update(new_lines)
             num_defaults_added += num_added
-    if slots:
+    if MISSING_SLOTS in config.enabled_errors:
         for name, info in stub_names.items():
             classes = gather_classes(
                 node=info,
                 name=name,
                 fullname=f"{module_name}.{name}",
                 runtime_parent=runtime_module,
-                blacklisted_objects=blacklisted_objects,
+                blacklisted_objects=config.blacklisted_objects,
             )
             for class_node, runtime_cls, qualname in classes:
                 slots_added, slot_errors = add_slots_to_class(
@@ -674,13 +661,12 @@ def add_defaults_to_stub_using_runtime(
                     class_node,
                     runtime_cls,
                     replacement_lines,
-                    enabled_errors=enabled_errors,
-                    apply_fixes=apply_fixes,
+                    config=config,
                     qualname=qualname,
                 )
                 errors.extend(slot_errors)
                 num_slots_added += slots_added
-    if apply_fixes and replacement_lines:
+    if config.apply_fixes and replacement_lines:
         with path.open("w", encoding="utf-8") as f:
             for i, line in enumerate(stub_lines):
                 if i in replacement_lines:
@@ -693,8 +679,7 @@ def add_defaults_to_stub_using_runtime(
 
 @dataclass
 class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
-    enabled_errors: frozenset[str]
-    apply_fixes: bool
+    config: Config
     num_added: int = 0
     errors: list[LintError] = field(default_factory=list)
 
@@ -743,7 +728,7 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
                     new_default = literal_slice_contents
         if new_default is None:
             return updated_node
-        if MISSING_DEFAULT in self.enabled_errors:
+        if MISSING_DEFAULT in self.config.enabled_errors:
             runtime_value = infer_value_of_node(new_default)
             self.errors.append(
                 LintError(
@@ -751,7 +736,7 @@ class ReplaceEllipsesUsingAnnotations(libcst.CSTTransformer):
                     f"parameter {original_node.name.value} missing default {runtime_value!r}",
                 )
             )
-            if self.apply_fixes:
+            if self.config.apply_fixes:
                 self.num_added += 1
                 return updated_node.with_changes(default=new_default)
         return updated_node
@@ -761,19 +746,16 @@ def add_defaults_to_stub_using_annotations(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     *,
-    enabled_errors: frozenset[str] = frozenset(),
-    apply_fixes: bool = False,
+    config: Config,
 ) -> tuple[list[LintError], int]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
     source = path.read_text(encoding="utf-8")
     cst = libcst.parse_module(source)
-    visitor = ReplaceEllipsesUsingAnnotations(
-        enabled_errors=enabled_errors, apply_fixes=apply_fixes
-    )
+    visitor = ReplaceEllipsesUsingAnnotations(config=config)
     modified_cst = cst.visit(visitor)
-    if apply_fixes and visitor.num_added > 0:
+    if config.apply_fixes and visitor.num_added > 0:
         path.write_text(modified_cst.code, encoding="utf-8")
     return visitor.errors, visitor.num_added
 
@@ -781,30 +763,17 @@ def add_defaults_to_stub_using_annotations(
 def add_defaults_to_stub(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
-    blacklisted_objects: frozenset[str],
     *,
-    slots: bool = False,
-    add_complex_defaults: bool = False,
-    enabled_errors: frozenset[str] = frozenset(),
-    apply_fixes: bool = False,
+    config: Config,
 ) -> tuple[list[LintError], int, int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     ann_errors, num_added_using_annotations = add_defaults_to_stub_using_annotations(
         module_name,
         context,
-        enabled_errors=enabled_errors,
-        apply_fixes=apply_fixes,
+        config=config,
     )
     runtime_errors, num_added_using_runtime, num_slots_added = (
-        add_defaults_to_stub_using_runtime(
-            module_name,
-            context,
-            blacklisted_objects,
-            slots=slots,
-            add_complex_defaults=add_complex_defaults,
-            enabled_errors=enabled_errors,
-            apply_fixes=apply_fixes,
-        )
+        add_defaults_to_stub_using_runtime(module_name, context, config=config)
     )
     errors = ann_errors + runtime_errors
     total_num_added = num_added_using_annotations + num_added_using_runtime
@@ -962,6 +931,12 @@ def main() -> None:
     )
     enabled_errors = frozenset(ALL_ERROR_CODES - set(args.disable))
     errors: list[LintError] = []
+    config = Config(
+        enabled_errors=enabled_errors,
+        apply_fixes=args.fix,
+        add_complex_defaults=args.add_complex_defaults,
+        blacklisted_objects=combined_blacklist,
+    )
     num_defaults_added = 0
     num_slots_added = 0
     for module, path in typeshed_client.get_all_stub_files(context):
@@ -976,24 +951,14 @@ def main() -> None:
                 these_errors, num_defaults, num_slots = add_defaults_to_stub(
                     module,
                     context,
-                    combined_blacklist,
-                    slots=args.slots,
-                    add_complex_defaults=args.add_complex_defaults,
-                    enabled_errors=enabled_errors,
-                    apply_fixes=args.fix,
+                    config=config,
                 )
                 errors += these_errors
                 num_defaults_added += num_defaults
                 num_slots_added += num_slots
         elif any(is_relative_to(path, p) for p in package_paths):
             these_errors, num_defaults, num_slots = add_defaults_to_stub(
-                module,
-                context,
-                combined_blacklist,
-                slots=args.slots,
-                add_complex_defaults=args.add_complex_defaults,
-                enabled_errors=enabled_errors,
-                apply_fixes=args.fix,
+                module, context, config=config
             )
             errors += these_errors
             num_defaults_added += num_defaults
