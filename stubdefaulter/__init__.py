@@ -377,9 +377,9 @@ def add_slots_to_class(
             ):
                 return 0
 
-    indentation = len(stub_lines[node.lineno - 1]) - len(
-        stub_lines[node.lineno - 1].lstrip()
-    ) + 4
+    indentation = (
+        len(stub_lines[node.lineno - 1]) - len(stub_lines[node.lineno - 1].lstrip()) + 4
+    )
     new_line = " " * indentation + f"__slots__ = {repr(runtime_slots)}"
 
     if len(node.body) == 1 and is_ellipsis_stmt(node.body[0]):
