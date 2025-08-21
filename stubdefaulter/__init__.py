@@ -13,6 +13,7 @@ import importlib
 import inspect
 import io
 import math
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -701,9 +702,16 @@ def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
         metadata_bytes = metadata_path.read_text(encoding="utf-8")
         metadata = tomli.loads(metadata_bytes)
         version = metadata["version"]
-        to_install.append(f"{path.name}=={version}")
+        if version[0] == "~":
+            to_install.append(f"{path.name}{version}")
+        else:
+            to_install.append(f"{path.name}=={version}")
     if to_install:
-        command = [sys.executable, "-m", "pip", "install", *to_install]
+        if shutil.which("uv") is not None:
+            # Use uv to install packages if available
+            command = ["uv", "pip", "install", *to_install, "--python", sys.executable]
+        else:
+            command = [sys.executable, "-m", "pip", "install", *to_install]
         print(f"Running install command: {' '.join(command)}")
         subprocess.check_call(command)
 
