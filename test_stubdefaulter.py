@@ -49,6 +49,9 @@ class Capybara:
     def __mangled(x="foo"):
         pass
 
+class Slotty:
+    __slots__ = ("x", "y")
+
 class Klass:
     class NestedKlass1:
         class NestedKlass2:
@@ -139,6 +142,8 @@ class Capybara:
     def overloaded_method(x: Literal[True]) -> int: ...
     def __mangled(x: str = ...) -> None: ...
 
+class Slotty: ...
+
 class Klass:
     class NestedKlass1:
         class NestedKlass2:
@@ -217,6 +222,9 @@ class Capybara:
     def overloaded_method(x: Literal[True]) -> int: ...
     def __mangled(x: str = 'foo') -> None: ...
 
+class Slotty:
+    __slots__ = ('x', 'y')
+
 class Klass:
     class NestedKlass1:
         class NestedKlass2:
@@ -276,19 +284,21 @@ def test_stubdefaulter() -> None:
         (pkg_path / "__init__.py").write_text(PY_FILE)
         (pkg_path / "py.typed").write_text("typed\n")
 
-        errors, _ = stubdefaulter.add_defaults_to_stub(
+        errors, _, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
             frozenset(),
+            slots=True,
         )
         assert stub_path.read_text() == EXPECTED_STUB
         assert len(errors) == 1
 
         stub_path.write_text(INPUT_STUB.replace(" = 1", " = ..."))
-        errors, _ = stubdefaulter.add_defaults_to_stub(
+        errors, _, _ = stubdefaulter.add_defaults_to_stub(
             PKG_NAME,
             typeshed_client.finder.get_search_context(search_path=[td]),
             frozenset(),
+            slots=True,
         )
         assert stub_path.read_text() == EXPECTED_STUB.replace(
             "wrong: int = 1", "wrong: int = 0"

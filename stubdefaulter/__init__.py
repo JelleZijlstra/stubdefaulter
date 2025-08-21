@@ -314,6 +314,17 @@ def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     return node.end_lineno
 
 
+def get_start_lineno(node: ast.AST) -> int:
+    linenos: list[int] = []
+    for subnode in ast.walk(node):
+        lineno = getattr(subnode, "lineno", None)
+        if lineno is not None:
+            linenos.append(lineno)
+    if not linenos:
+        raise ValueError("Node has no lineno attribute")
+    return min(linenos)
+
+
 def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -342,6 +353,115 @@ def replace_defaults_in_func(
         for param_name, stub_default, runtime_default in visitor.errors
     ]
     return visitor.num_added, errors, output_dict
+
+
+def is_ellipsis_stmt(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and node.value.value is Ellipsis
+    )
+
+
+def is_docstring_stmt(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    )
+
+
+def add_slots_to_class(
+    stub_lines: list[str],
+    node: ast.ClassDef,
+    runtime_cls: type,
+    replacement_lines: dict[int, list[str]],
+) -> int:
+    runtime_slots = runtime_cls.__dict__.get("__slots__")
+    if runtime_slots is None:
+        return 0
+    if isinstance(getattr(runtime_cls, "_fields", None), tuple):
+        # Probably a namedtuple, which always have empty __slots__. Not interesting.
+        return 0
+    for stmt in node.body:
+        if isinstance(stmt, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__slots__"
+                for target in stmt.targets
+            ):
+                return 0
+
+    indentation = (
+        len(stub_lines[node.lineno - 1]) - len(stub_lines[node.lineno - 1].lstrip()) + 4
+    )
+    new_line = " " * indentation + f"__slots__ = {repr(runtime_slots)}"
+
+    if len(node.body) == 1 and is_ellipsis_stmt(node.body[0]):
+        line_index = get_start_lineno(node.body[0]) - 1
+        class_line = stub_lines[line_index]
+        header = class_line.split(":")[0] + ":"
+        replacement_lines[line_index] = [header, new_line]
+        return 1
+
+    if node.body and is_docstring_stmt(node.body[0]):
+        doc = node.body[0]
+        assert doc.end_lineno is not None
+        line_index = doc.end_lineno
+    elif node.body:
+        line_index = get_start_lineno(node.body[0]) - 1
+    else:
+        line_index = node.lineno
+
+    if line_index in replacement_lines:
+        replacement_lines[line_index] = [new_line, *replacement_lines[line_index]]
+    else:
+        if line_index < len(stub_lines):
+            replacement_lines[line_index] = [new_line, stub_lines[line_index]]
+        else:
+            replacement_lines[line_index] = [new_line]
+    return 1
+
+
+def gather_classes(
+    node: typeshed_client.NameInfo,
+    name: str,
+    fullname: str,
+    runtime_parent: type | types.ModuleType,
+    blacklisted_objects: frozenset[str],
+) -> Iterator[tuple[ast.ClassDef, type[object]]]:
+    if fullname in blacklisted_objects:
+        log(f"Skipping {fullname}: blacklisted object")
+        return
+    if not isinstance(node.ast, ast.ClassDef):
+        return
+    if isinstance(runtime_parent, type(typing.Mapping)):
+        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
+    try:
+        try:
+            runtime = getattr(runtime_parent, name)
+        except AttributeError:
+            runtime = inspect.getattr_static(runtime_parent, name)
+    except Exception:
+        log("Could not find", fullname, "at runtime")
+        return
+    if isinstance(runtime, type):
+        yield node.ast, runtime
+    if node.child_nodes is not None:
+        for child_name, child_node in node.child_nodes.items():
+            if child_name.startswith("__") and not child_name.endswith("__"):
+                unmangled_parent_name = fullname.split(".")[-1]
+                maybe_mangled_child_name = (
+                    f"_{unmangled_parent_name.lstrip('_')}{child_name}"
+                )
+            else:
+                maybe_mangled_child_name = child_name
+            yield from gather_classes(
+                node=child_node,
+                name=maybe_mangled_child_name,
+                fullname=f"{fullname}.{child_name}",
+                runtime_parent=runtime,
+                blacklisted_objects=blacklisted_objects,
+            )
 
 
 def gather_funcs(
@@ -404,7 +524,9 @@ def add_defaults_to_stub_using_runtime(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
-) -> tuple[list[str], int]:
+    *,
+    slots: bool = False,
+) -> tuple[list[str], int, int]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -418,13 +540,14 @@ def add_defaults_to_stub_using_runtime(
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
         log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
-        return [], 0
+        return [], 0, 0
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text(encoding="utf-8").splitlines()
     replacement_lines: dict[int, list[str]] = {}
-    total_num_added = 0
+    num_defaults_added = 0
+    num_slots_added = 0
     errors = []
     for name, info in stub_names.items():
         funcs = gather_funcs(
@@ -444,7 +567,20 @@ def add_defaults_to_stub_using_runtime(
                 errors.append(message)
                 print(colored(message, "red"))
             replacement_lines.update(new_lines)
-            total_num_added += num_added
+            num_defaults_added += num_added
+    if slots:
+        for name, info in stub_names.items():
+            classes = gather_classes(
+                node=info,
+                name=name,
+                fullname=f"{module_name}.{name}",
+                runtime_parent=runtime_module,
+                blacklisted_objects=blacklisted_objects,
+            )
+            for class_node, runtime_cls in classes:
+                num_slots_added += add_slots_to_class(
+                    stub_lines, class_node, runtime_cls, replacement_lines
+                )
     with path.open("w", encoding="utf-8") as f:
         for i, line in enumerate(stub_lines):
             if i in replacement_lines:
@@ -452,7 +588,7 @@ def add_defaults_to_stub_using_runtime(
                     f.write(new_line + "\n")
             else:
                 f.write(line + "\n")
-    return errors, total_num_added
+    return errors, num_defaults_added, num_slots_added
 
 
 @dataclass
@@ -525,17 +661,21 @@ def add_defaults_to_stub(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
-) -> tuple[list[str], int]:
+    *,
+    slots: bool = False,
+) -> tuple[list[str], int, int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     num_added_using_annotations = add_defaults_to_stub_using_annotations(
         module_name, context
     )
-    errors, num_added_using_runtime = add_defaults_to_stub_using_runtime(
-        module_name, context, blacklisted_objects
+    errors, num_added_using_runtime, num_slots_added = (
+        add_defaults_to_stub_using_runtime(
+            module_name, context, blacklisted_objects, slots=slots
+        )
     )
     total_num_added = num_added_using_annotations + num_added_using_runtime
-    print(f"added {total_num_added} defaults")
-    return errors, total_num_added
+    print(f"added {total_num_added} defaults and {num_slots_added} slots")
+    return errors, total_num_added, num_slots_added
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -635,6 +775,11 @@ def main() -> None:
         action="store_true",
         help="Exit with code 2 when changes where made.",
     )
+    parser.add_argument(
+        "--slots",
+        action="store_true",
+        help="Add __slots__ to the stubs in addition to deafults.",
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -656,7 +801,8 @@ def main() -> None:
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
     errors = []
-    total_num_added = 0
+    num_defaults_added = 0
+    num_slots_added = 0
     for module, path in typeshed_client.get_all_stub_files(context):
         if stdlib_path is not None and is_relative_to(path, stdlib_path):
             if any(
@@ -666,25 +812,27 @@ def main() -> None:
                 log(f"Skipping {module}: blacklisted module")
                 continue
             else:
-                these_errors, num_added = add_defaults_to_stub(
-                    module, context, combined_blacklist
+                these_errors, num_defaults, num_slots = add_defaults_to_stub(
+                    module, context, combined_blacklist, slots=args.slots
                 )
                 errors += these_errors
-                total_num_added += num_added
+                num_defaults_added += num_defaults
+                num_slots_added += num_slots
         elif any(is_relative_to(path, p) for p in package_paths):
-            these_errors, num_added = add_defaults_to_stub(
-                module, context, combined_blacklist
+            these_errors, num_defaults, num_slots = add_defaults_to_stub(
+                module, context, combined_blacklist, slots=args.slots
             )
             errors += these_errors
-            total_num_added += num_added
-    m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
+            num_defaults_added += num_defaults
+            num_slots_added += num_slots
+    m = f"\n--- Added {num_defaults_added} defaults and {num_slots_added} slots; encountered {len(errors)} errors ---"
     print(colored(m, "red" if errors else "green"))
 
     exit_code = 0
     # Passing both `--check` and `--exit-zero` will:
     # 1. Exit with 2 if there were changes to the source code
     # 2. Exit with 0 if there were no changes to the source code, ignoring errors
-    if total_num_added and args.check:
+    if (num_defaults_added or num_slots_added) and args.check:
         exit_code = 2
     if errors and not args.exit_zero:
         exit_code = 1
