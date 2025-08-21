@@ -216,9 +216,6 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         if param.default is inspect.Parameter.empty:
             return None
         if (not self.add_complex_defaults) and is_complex_default(param.default):
-            print(
-                f"Rejected complex default for {node.name.value!r}: {param.default!r}"
-            )
             return None
         new_stub_default = self._infer_value_for_default(node, param.default)
         if new_stub_default is None or default_is_too_long(new_stub_default):
