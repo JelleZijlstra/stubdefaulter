@@ -510,7 +510,9 @@ def add_defaults_to_stub_using_runtime(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
-) -> tuple[list[str], int]:
+    *,
+    slots: bool = False,
+) -> tuple[list[str], int, int]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
         raise ValueError(f"Could not find stub for {module_name}")
@@ -524,13 +526,14 @@ def add_defaults_to_stub_using_runtime(
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
         log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
-        return [], 0
+        return [], 0, 0
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
         raise ValueError(f"Could not find stub for {module_name}")
     stub_lines = path.read_text(encoding="utf-8").splitlines()
     replacement_lines: dict[int, list[str]] = {}
-    total_num_added = 0
+    num_defaults_added = 0
+    num_slots_added = 0
     errors = []
     for name, info in stub_names.items():
         funcs = gather_funcs(
@@ -550,19 +553,20 @@ def add_defaults_to_stub_using_runtime(
                 errors.append(message)
                 print(colored(message, "red"))
             replacement_lines.update(new_lines)
-            total_num_added += num_added
-    for name, info in stub_names.items():
-        classes = gather_classes(
-            node=info,
-            name=name,
-            fullname=f"{module_name}.{name}",
-            runtime_parent=runtime_module,
-            blacklisted_objects=blacklisted_objects,
-        )
-        for class_node, runtime_cls in classes:
-            total_num_added += add_slots_to_class(
-                stub_lines, class_node, runtime_cls, replacement_lines
+            num_defaults_added += num_added
+    if slots:
+        for name, info in stub_names.items():
+            classes = gather_classes(
+                node=info,
+                name=name,
+                fullname=f"{module_name}.{name}",
+                runtime_parent=runtime_module,
+                blacklisted_objects=blacklisted_objects,
             )
+            for class_node, runtime_cls in classes:
+                num_slots_added += add_slots_to_class(
+                    stub_lines, class_node, runtime_cls, replacement_lines
+                )
     with path.open("w", encoding="utf-8") as f:
         for i, line in enumerate(stub_lines):
             if i in replacement_lines:
@@ -570,7 +574,7 @@ def add_defaults_to_stub_using_runtime(
                     f.write(new_line + "\n")
             else:
                 f.write(line + "\n")
-    return errors, total_num_added
+    return errors, num_defaults_added, num_slots_added
 
 
 @dataclass
@@ -643,17 +647,19 @@ def add_defaults_to_stub(
     module_name: str,
     context: typeshed_client.finder.SearchContext,
     blacklisted_objects: frozenset[str],
-) -> tuple[list[str], int]:
+    *,
+    slots: bool = False,
+) -> tuple[list[str], int, int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     num_added_using_annotations = add_defaults_to_stub_using_annotations(
         module_name, context
     )
-    errors, num_added_using_runtime = add_defaults_to_stub_using_runtime(
-        module_name, context, blacklisted_objects
+    errors, num_added_using_runtime, num_slots_added = add_defaults_to_stub_using_runtime(
+        module_name, context, blacklisted_objects, slots=slots
     )
     total_num_added = num_added_using_annotations + num_added_using_runtime
-    print(f"added {total_num_added} defaults")
-    return errors, total_num_added
+    print(f"added {total_num_added} defaults and {num_slots_added} slots")
+    return errors, total_num_added, num_slots_added
 
 
 def is_relative_to(left: Path, right: Path) -> bool:
@@ -753,6 +759,11 @@ def main() -> None:
         action="store_true",
         help="Exit with code 2 when changes where made.",
     )
+    parser.add_argument(
+        "--slots",
+        action="store_true",
+        help="Add __slots__ to the stubs in addition to deafults.",
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -774,7 +785,8 @@ def main() -> None:
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
     errors = []
-    total_num_added = 0
+    num_defaults_added = 0
+    num_slots_added = 0
     for module, path in typeshed_client.get_all_stub_files(context):
         if stdlib_path is not None and is_relative_to(path, stdlib_path):
             if any(
@@ -784,25 +796,27 @@ def main() -> None:
                 log(f"Skipping {module}: blacklisted module")
                 continue
             else:
-                these_errors, num_added = add_defaults_to_stub(
-                    module, context, combined_blacklist
+                these_errors, num_defaults, num_slots = add_defaults_to_stub(
+                    module, context, combined_blacklist, slots=args.slots
                 )
                 errors += these_errors
-                total_num_added += num_added
+                num_defaults_added += num_defaults
+                num_slots_added += num_slots
         elif any(is_relative_to(path, p) for p in package_paths):
-            these_errors, num_added = add_defaults_to_stub(
-                module, context, combined_blacklist
+            these_errors, num_defaults, num_slots = add_defaults_to_stub(
+                module, context, combined_blacklist, slots=args.slots
             )
             errors += these_errors
-            total_num_added += num_added
-    m = f"\n--- Added {total_num_added} defaults; encountered {len(errors)} errors ---"
+            num_defaults_added += num_defaults
+            num_slots_added += num_slots
+    m = f"\n--- Added {num_defaults_added} defaults and {num_slots_added} slots; encountered {len(errors)} errors ---"
     print(colored(m, "red" if errors else "green"))
 
     exit_code = 0
     # Passing both `--check` and `--exit-zero` will:
     # 1. Exit with 2 if there were changes to the source code
     # 2. Exit with 0 if there were no changes to the source code, ignoring errors
-    if total_num_added and args.check:
+    if (num_defaults_added or num_slots_added) and args.check:
         exit_code = 2
     if errors and not args.exit_zero:
         exit_code = 1
