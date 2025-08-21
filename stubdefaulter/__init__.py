@@ -668,8 +668,10 @@ def add_defaults_to_stub(
     num_added_using_annotations = add_defaults_to_stub_using_annotations(
         module_name, context
     )
-    errors, num_added_using_runtime, num_slots_added = add_defaults_to_stub_using_runtime(
-        module_name, context, blacklisted_objects, slots=slots
+    errors, num_added_using_runtime, num_slots_added = (
+        add_defaults_to_stub_using_runtime(
+            module_name, context, blacklisted_objects, slots=slots
+        )
     )
     total_num_added = num_added_using_annotations + num_added_using_runtime
     print(f"added {total_num_added} defaults and {num_slots_added} slots")
