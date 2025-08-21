@@ -6,3 +6,6 @@ keyboard.mouse.wait
 
 # Something weird, different defaults in some subclasses?
 gevent._ffi.loop.AbstractLoop.break_
+
+# Default is dynamic
+yt_dlp.utils._utils.encode_compat_str
