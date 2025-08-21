@@ -49,6 +49,9 @@ class Capybara:
     def __mangled(x="foo"):
         pass
 
+class Slotty:
+    __slots__ = ("x", "y")
+
 class Klass:
     class NestedKlass1:
         class NestedKlass2:
@@ -139,6 +142,8 @@ class Capybara:
     def overloaded_method(x: Literal[True]) -> int: ...
     def __mangled(x: str = ...) -> None: ...
 
+class Slotty: ...
+
 class Klass:
     class NestedKlass1:
         class NestedKlass2:
@@ -216,6 +221,9 @@ class Capybara:
     @overload
     def overloaded_method(x: Literal[True]) -> int: ...
     def __mangled(x: str = 'foo') -> None: ...
+
+class Slotty:
+    __slots__ = ('x', 'y')
 
 class Klass:
     class NestedKlass1:

@@ -344,6 +344,110 @@ def replace_defaults_in_func(
     return visitor.num_added, errors, output_dict
 
 
+def is_ellipsis_stmt(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(getattr(node, "value", None), ast.Constant)
+        and node.value.value is Ellipsis
+    )
+
+
+def is_docstring_stmt(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(getattr(node, "value", None), ast.Constant)
+        and isinstance(node.value.value, str)
+    )
+
+
+def add_slots_to_class(
+    stub_lines: list[str],
+    node: ast.ClassDef,
+    runtime_cls: type,
+    replacement_lines: dict[int, list[str]],
+) -> int:
+    runtime_slots = runtime_cls.__dict__.get("__slots__")
+    if runtime_slots is None:
+        return 0
+    for stmt in node.body:
+        if isinstance(stmt, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__slots__"
+                for target in stmt.targets
+            ):
+                return 0
+
+    indentation = len(stub_lines[node.lineno - 1]) - len(
+        stub_lines[node.lineno - 1].lstrip()
+    ) + 4
+    new_line = " " * indentation + f"__slots__ = {repr(runtime_slots)}"
+
+    if len(node.body) == 1 and is_ellipsis_stmt(node.body[0]):
+        line_index = node.body[0].lineno - 1
+        class_line = stub_lines[line_index]
+        header = class_line.split(":")[0] + ":"
+        replacement_lines[line_index] = [header, new_line]
+        return 1
+
+    if node.body and is_docstring_stmt(node.body[0]):
+        doc = node.body[0]
+        assert doc.end_lineno is not None
+        line_index = doc.end_lineno
+    elif node.body:
+        line_index = node.body[0].lineno - 1
+    else:
+        line_index = node.lineno
+
+    if line_index in replacement_lines:
+        replacement_lines[line_index] = [new_line, *replacement_lines[line_index]]
+    else:
+        if line_index < len(stub_lines):
+            replacement_lines[line_index] = [new_line, stub_lines[line_index]]
+        else:
+            replacement_lines[line_index] = [new_line]
+    return 1
+
+
+def gather_classes(
+    node: typeshed_client.NameInfo,
+    name: str,
+    fullname: str,
+    runtime_parent: type | types.ModuleType,
+    blacklisted_objects: frozenset[str],
+) -> Iterator[tuple[ast.ClassDef, Any]]:
+    if fullname in blacklisted_objects:
+        log(f"Skipping {fullname}: blacklisted object")
+        return
+    if not isinstance(node.ast, ast.ClassDef):
+        return
+    if isinstance(runtime_parent, type(typing.Mapping)):
+        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
+    try:
+        try:
+            runtime = getattr(runtime_parent, name)
+        except AttributeError:
+            runtime = inspect.getattr_static(runtime_parent, name)
+    except Exception:
+        log("Could not find", fullname, "at runtime")
+        return
+    yield node.ast, runtime
+    for child_name, child_node in node.child_nodes.items():
+        if child_name.startswith("__") and not child_name.endswith("__"):
+            unmangled_parent_name = fullname.split(".")[-1]
+            maybe_mangled_child_name = (
+                f"_{unmangled_parent_name.lstrip('_')}{child_name}"
+            )
+        else:
+            maybe_mangled_child_name = child_name
+        yield from gather_classes(
+            node=child_node,
+            name=maybe_mangled_child_name,
+            fullname=f"{fullname}.{child_name}",
+            runtime_parent=runtime,
+            blacklisted_objects=blacklisted_objects,
+        )
+
+
 def gather_funcs(
     node: typeshed_client.NameInfo,
     name: str,
@@ -445,6 +549,18 @@ def add_defaults_to_stub_using_runtime(
                 print(colored(message, "red"))
             replacement_lines.update(new_lines)
             total_num_added += num_added
+    for name, info in stub_names.items():
+        classes = gather_classes(
+            node=info,
+            name=name,
+            fullname=f"{module_name}.{name}",
+            runtime_parent=runtime_module,
+            blacklisted_objects=blacklisted_objects,
+        )
+        for class_node, runtime_cls in classes:
+            total_num_added += add_slots_to_class(
+                stub_lines, class_node, runtime_cls, replacement_lines
+            )
     with path.open("w", encoding="utf-8") as f:
         for i, line in enumerate(stub_lines):
             if i in replacement_lines:
