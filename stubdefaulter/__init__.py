@@ -773,6 +773,15 @@ def load_blacklist(path: Path) -> frozenset[str]:
     return entries - {""}
 
 
+def gather_blacklists(paths: Sequence[Path]) -> frozenset[str]:
+    combined_blacklist: set[str] = set()
+    for path in paths:
+        if not path.exists() or not path.is_file():
+            raise ValueError(f"Blacklist path {path} does not exist or is not a file")
+        combined_blacklist.update(load_blacklist(path))
+    return frozenset(combined_blacklist)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -847,13 +856,13 @@ def main() -> None:
     typeshed_paths = [Path(p) for p in args.typeshed_packages]
     install_typeshed_packages(typeshed_paths)
     package_paths = [Path(p) for p in args.packages] + typeshed_paths
-    stdlib_blacklist_path = Path(__file__).parent / "stdlib-blacklist.txt"
-    assert stdlib_blacklist_path.exists() and stdlib_blacklist_path.is_file()
-    blacklist_paths = [Path(p) for p in args.blacklists] + [stdlib_blacklist_path]
 
-    combined_blacklist = frozenset(
-        chain.from_iterable(load_blacklist(path) for path in blacklist_paths)
-    )
+    blacklist_paths = [Path(p) for p in args.blacklists] + [
+        Path(__file__).parent / "stdlib-blacklist.txt",
+        Path(__file__).parent / "typeshed-blacklist.txt",
+    ]
+    combined_blacklist = gather_blacklists(blacklist_paths)
+
     context = typeshed_client.finder.get_search_context(
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )

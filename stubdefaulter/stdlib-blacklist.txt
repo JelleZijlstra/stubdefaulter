@@ -1,3 +1,5 @@
+# Functions in typeshed's stdlib directory for which we should not add defaults
+
 # The default value of the `mode` parameter varies depending on your OS
 ctypes.CDLL.__init__
 
@@ -10,10 +12,6 @@ locale.resetlocale
 # The default value for `size` is system-dependent.
 multiprocessing.heap.Heap
 
-# The default value for `basedir` is dynamically calculated
-# based on the specific directory the Python executable is found in
-pydoc.Doc.getdocloc
-
 # The default value for the `scheme` parameter will vary
 # depending on the precise kind of operating system you're running
 sysconfig.get_path
@@ -24,23 +22,12 @@ sysconfig.get_paths
 tkinter.Tk.__init__
 tkinter.Tcl
 
-# `inspect.signature()` gives `None` as the default value for all optional parameters,
-# but passing `None` in fails at runtime.
-# The true "default value" is inexpressible.
-types.CodeType.replace
-
 # The default value for the `stop` parameter of `collections.abc.Sequence` is `None`,
 # but we'd have to add many `type: ignore`s to typeshed, for little gain,
 # if we added that to the stub.
 # (Most real-world sequences don't allow `None` to be passed in.)
 # https://github.com/python/typeshed/pull/9625
 typing.Sequence.index
-
-# The runtime gives `None` as default values on Python 3.7 for these functions, but not on Python 3.8+
-# Passing `None` in will result in an exception being raised
-cmath.log
-os.utime
-pyexpat.XMLParserType.ExternalEntityParserCreate
 
 # TODO: fix these in typeshed: https://github.com/python/typeshed/issues/9652
 asyncio.base_events.BaseEventLoop.create_connection
