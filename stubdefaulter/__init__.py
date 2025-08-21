@@ -99,10 +99,37 @@ def infer_value_of_node(node: libcst.BaseExpression) -> object:
         return NotImplemented
 
 
+def is_complex_default(value: object, *, allow_containers: bool = True) -> bool:
+    # Mostly flake8-pyi Y015
+    if isinstance(value, (str, bytes)):
+        return len(value) > 50  # flake8-pyi Y053
+    elif isinstance(value, (int, float, complex)) or value is None or value is ...:
+        return len(str(value)) > 10  # flake8-pyi Y054
+    elif isinstance(value, (list, tuple, set)):
+        return (
+            (not allow_containers)
+            or len(value) > 10
+            or any(is_complex_default(item, allow_containers=False) for item in value)
+        )
+    elif isinstance(value, dict):
+        return (
+            not allow_containers
+            or len(value) > 10
+            or any(
+                is_complex_default(key, allow_containers=False)
+                or is_complex_default(value, allow_containers=False)
+                for key, value in value.items()
+            )
+        )
+    else:
+        return True
+
+
 @dataclass
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     sig: inspect.Signature
     stub_params: libcst.Parameters
+    add_complex_defaults: bool = False
     num_added: int = 0
     errors: list[tuple[str, object, object]] = field(default_factory=list)
 
@@ -187,6 +214,11 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         if not isinstance(param, inspect.Parameter):
             return None
         if param.default is inspect.Parameter.empty:
+            return None
+        if (not self.add_complex_defaults) and is_complex_default(param.default):
+            print(
+                f"Rejected complex default for {node.name.value!r}: {param.default!r}"
+            )
             return None
         new_stub_default = self._infer_value_for_default(node, param.default)
         if new_stub_default is None or default_is_too_long(new_stub_default):
@@ -330,6 +362,8 @@ def replace_defaults_in_func(
     stub_lines: list[str],
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     runtime_func: Any,
+    *,
+    add_complex_defaults: bool = False,
 ) -> tuple[int, list[str], dict[int, list[str]]]:
     try:
         sig = inspect.signature(runtime_func)
@@ -342,7 +376,9 @@ def replace_defaults_in_func(
         textwrap.dedent("".join(line + "\n" for line in lines))
     )
     assert isinstance(cst, libcst.FunctionDef)
-    visitor = ReplaceEllipsesUsingRuntime(sig, cst.params)
+    visitor = ReplaceEllipsesUsingRuntime(
+        sig, cst.params, add_complex_defaults=add_complex_defaults
+    )
     modified = cst.visit(visitor)
     assert isinstance(modified, libcst.FunctionDef)
     new_code = textwrap.indent(libcst.Module(body=[modified]).code, " " * indentation)
@@ -527,6 +563,7 @@ def add_defaults_to_stub_using_runtime(
     blacklisted_objects: frozenset[str],
     *,
     slots: bool = False,
+    add_complex_defaults: bool = False,
 ) -> tuple[list[str], int, int]:
     path = typeshed_client.get_stub_file(module_name, search_context=context)
     if path is None:
@@ -561,7 +598,10 @@ def add_defaults_to_stub_using_runtime(
 
         for func, runtime_func in funcs:
             num_added, new_errors, new_lines = replace_defaults_in_func(
-                stub_lines, func, runtime_func
+                stub_lines,
+                func,
+                runtime_func,
+                add_complex_defaults=add_complex_defaults,
             )
             for error in new_errors:
                 message = f"{module_name}.{name}: {error}"
@@ -664,6 +704,7 @@ def add_defaults_to_stub(
     blacklisted_objects: frozenset[str],
     *,
     slots: bool = False,
+    add_complex_defaults: bool = False,
 ) -> tuple[list[str], int, int]:
     print(f"Processing {module_name}... ", end="", flush=True)
     num_added_using_annotations = add_defaults_to_stub_using_annotations(
@@ -671,7 +712,11 @@ def add_defaults_to_stub(
     )
     errors, num_added_using_runtime, num_slots_added = (
         add_defaults_to_stub_using_runtime(
-            module_name, context, blacklisted_objects, slots=slots
+            module_name,
+            context,
+            blacklisted_objects,
+            slots=slots,
+            add_complex_defaults=add_complex_defaults,
         )
     )
     total_num_added = num_added_using_annotations + num_added_using_runtime
@@ -788,6 +833,13 @@ def main() -> None:
         action="store_true",
         help="Add __slots__ to the stubs in addition to deafults.",
     )
+    parser.add_argument(
+        "--add-complex-defaults",
+        action="store_true",
+        help=(
+            "Add complex defaults that are not allowed by typeshed's default linting settings."
+        ),
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -821,14 +873,22 @@ def main() -> None:
                 continue
             else:
                 these_errors, num_defaults, num_slots = add_defaults_to_stub(
-                    module, context, combined_blacklist, slots=args.slots
+                    module,
+                    context,
+                    combined_blacklist,
+                    slots=args.slots,
+                    add_complex_defaults=args.add_complex_defaults,
                 )
                 errors += these_errors
                 num_defaults_added += num_defaults
                 num_slots_added += num_slots
         elif any(is_relative_to(path, p) for p in package_paths):
             these_errors, num_defaults, num_slots = add_defaults_to_stub(
-                module, context, combined_blacklist, slots=args.slots
+                module,
+                context,
+                combined_blacklist,
+                slots=args.slots,
+                add_complex_defaults=args.add_complex_defaults,
             )
             errors += these_errors
             num_defaults_added += num_defaults
