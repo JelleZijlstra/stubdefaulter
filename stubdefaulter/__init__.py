@@ -548,7 +548,7 @@ def gather_classes(
 
 def gather_funcs(
     node: typeshed_client.NameInfo,
-   name: str,
+    name: str,
     fullname: str,
     runtime_parent: type | types.ModuleType,
     blacklisted_objects: frozenset[str],
