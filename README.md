@@ -20,8 +20,14 @@ virtual environment.
 
 - Install the package by running `pip install stubdefaulter`
 - Invoke it as `python -m stubdefaulter`
+- The tool is now a linter with error codes:
+  - `missing-default` for parameters that are missing a default value
+  - `wrong-default` for parameters whose stub default differs from runtime
+  - `missing-slots` for classes that define `__slots__` at runtime but not in the stub
+- Error codes can be disabled on the command line with `--disable CODE`
+- Use `--fix` to apply autofixes for the selected error codes
 - Example invocations:
-  - `python -m stubdefaulter --stdlib-path path/to/typeshed/stdlib`
+  - `python -m stubdefaulter --fix --stdlib-path path/to/typeshed/stdlib`
     - Add defaults to the stdlib stubs in typeshed
   - `python -m stubdefaulter --packages path/to/typeshed/stubs/requests path/to/typeshed/stubs/babel`
     - Add defaults to the `requests` and `babel` packages in typeshed

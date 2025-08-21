@@ -199,7 +199,7 @@ from typing import overload, Literal
 def f(x: int = 0, y: str = 'y', z: bool = True, a: Any = None) -> None: ...
 def more_ints(x: int = -1, y: bool = ...) -> None: ...
 def ints_as_hexadecimals(x: int = 0x7FFFFFFF, y=0b1101, z=0o744) -> None: ...
-def wrong_default(wrong: int = 1) -> None: ...
+def wrong_default(wrong: int = 0) -> None: ...
 def floats(a: float = 1.23456, b: float = 0.0, c: float = -9.87654, d: float = -0.0) -> None: ...
 def float_edge_cases(one: float = ..., two: float = ..., three: float = ...) -> None: ...
 def bytes_func(one: bytes = b'foo') -> None: ...
@@ -290,9 +290,14 @@ def test_stubdefaulter() -> None:
             frozenset(),
             slots=True,
             add_complex_defaults=True,
+            enabled_errors=stubdefaulter.ALL_ERROR_CODES,
+            apply_fixes=True,
         )
         assert stub_path.read_text() == EXPECTED_STUB
-        assert len(errors) == 1
+        codes = {e.code for e in errors}
+        assert stubdefaulter.MISSING_DEFAULT in codes
+        assert stubdefaulter.WRONG_DEFAULT in codes
+        assert stubdefaulter.MISSING_SLOTS in codes
 
         stub_path.write_text(INPUT_STUB.replace(" = 1", " = ..."))
         errors, _, _ = stubdefaulter.add_defaults_to_stub(
@@ -301,11 +306,14 @@ def test_stubdefaulter() -> None:
             frozenset(),
             slots=True,
             add_complex_defaults=True,
+            enabled_errors=stubdefaulter.ALL_ERROR_CODES,
+            apply_fixes=True,
         )
-        assert stub_path.read_text() == EXPECTED_STUB.replace(
-            "wrong: int = 1", "wrong: int = 0"
-        )
-        assert len(errors) == 0
+        assert stub_path.read_text() == EXPECTED_STUB
+        codes = {e.code for e in errors}
+        assert stubdefaulter.WRONG_DEFAULT not in codes
+        assert stubdefaulter.MISSING_DEFAULT in codes
+        assert stubdefaulter.MISSING_SLOTS in codes
 
 
 @pytest.mark.parametrize(
