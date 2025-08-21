@@ -1,4 +1,4 @@
-# Functions in the typeshed third-party packages for which we should not add defaults
+# Functions in typeshed third-party packages for which we should not add defaults
 
 # Defaults are OS-dependent
 keyboard.mouse.on_button
