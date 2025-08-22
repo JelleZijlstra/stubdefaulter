@@ -56,6 +56,7 @@ class Config:
     enabled_errors: frozenset[str]
     apply_fixes: bool
     blacklisted_objects: frozenset[str]
+    verbose: bool = False
 
 
 @dataclass
@@ -75,8 +76,9 @@ def default_is_too_long(default: libcst.BaseExpression) -> bool:
     return len(repr_of_default) > DEFAULT_LENGTH_LIMIT
 
 
-def log(*objects: object) -> None:
-    print(colored(" ".join(map(str, objects)), "yellow"))
+def log(config: Config, *objects: object) -> None:
+    if config.verbose:
+        print(colored(" ".join(map(str, objects)), "yellow"))
 
 
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
@@ -587,9 +589,11 @@ def gather_funcs(
     fullname: str,
     runtime_parent: type | types.ModuleType,
     blacklisted_objects: frozenset[str],
+    *,
+    config: Config,
 ) -> Iterator[tuple[ast.FunctionDef | ast.AsyncFunctionDef, Any]]:
     if fullname in blacklisted_objects:
-        log(f"Skipping {fullname}: blacklisted object")
+        log(config, f"Skipping {fullname}: blacklisted object")
         return
     interesting_classes = (
         ast.ClassDef,
@@ -609,7 +613,7 @@ def gather_funcs(
             runtime = inspect.getattr_static(runtime_parent, name)
     # Some getattr() calls raise TypeError, or something even more exotic
     except Exception:
-        log("Could not find", fullname, "at runtime")
+        log(config, "Could not find", fullname, "at runtime")
         return
     if isinstance(node.ast, ast.ClassDef):
         if not node.child_nodes:
@@ -628,6 +632,7 @@ def gather_funcs(
                 fullname=f"{fullname}.{child_name}",
                 runtime_parent=runtime,
                 blacklisted_objects=blacklisted_objects,
+                config=config,
             )
     elif isinstance(node.ast, typeshed_client.OverloadedName):
         for definition in node.ast.definitions:
@@ -643,9 +648,11 @@ def locate_class(
     fullname: str,
     runtime_parent: object,
     blacklisted_objects: frozenset[str],
+    *,
+    config: Config,
 ) -> type[object] | None:
     if fullname in blacklisted_objects:
-        log(f"Skipping {fullname}: blacklisted object")
+        log(config, f"Skipping {fullname}: blacklisted object")
         return None
     if not isinstance(node.ast, ast.ClassDef):
         return None
@@ -656,7 +663,7 @@ def locate_class(
         except AttributeError:
             runtime = inspect.getattr_static(runtime_parent, name)
     except Exception:
-        log("Could not find", fullname, "at runtime")
+        log(config, "Could not find", fullname, "at runtime")
         return None
     if isinstance(runtime, type):
         return runtime
@@ -710,6 +717,7 @@ def visit_classes_with_runtime(
             fullname=qualname,
             runtime_parent=runtime_parent,
             blacklisted_objects=config.blacklisted_objects,
+            config=config,
         )
         if runtime_cls is None:
             continue
@@ -758,7 +766,7 @@ def run_checks_with_runtime(
     # `importlib.import_module("multiprocessing.popen_fork")` crashes with AttributeError on Windows
     # Trying to import serial.__main__ for typeshed's pyserial package will raise SystemExit
     except BaseException as e:
-        log(f'Could not import {module_name}: {type(e).__name__}: "{e}"')
+        log(config, f'Could not import {module_name}: {type(e).__name__}: "{e}"')
         return
     stub_names = typeshed_client.get_stub_names(module_name, search_context=context)
     if stub_names is None:
@@ -772,6 +780,7 @@ def run_checks_with_runtime(
             fullname=f"{module_name}.{name}",
             runtime_parent=runtime_module,
             blacklisted_objects=config.blacklisted_objects,
+            config=config,
         )
 
         for func, runtime_func in funcs:
@@ -1047,6 +1056,12 @@ def main() -> None:
         action="store_true",
         help="Apply autofixes to stubs",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
+    )
     args = parser.parse_args()
 
     stdlib_path = Path(args.stdlib_path) if args.stdlib_path else None
@@ -1079,6 +1094,7 @@ def main() -> None:
         apply_fixes=args.fix,
         add_complex_defaults=args.add_complex_defaults,
         blacklisted_objects=combined_blacklist,
+        verbose=bool(args.verbose),
     )
     # Counts removed; rely on collected errors and their `fixed` status
     for module, path in typeshed_client.get_all_stub_files(context):
@@ -1087,7 +1103,7 @@ def main() -> None:
                 path.relative_to(stdlib_path).match(pattern)
                 for pattern in STDLIB_MODULE_BLACKLIST
             ):
-                log(f"Skipping {module}: blacklisted module")
+                log(config, f"Skipping {module}: blacklisted module")
                 continue
             else:
                 errors += run_on_stub(module, context, config=config)
