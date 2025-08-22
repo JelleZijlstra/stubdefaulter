@@ -466,7 +466,7 @@ def is_docstring_stmt(node: ast.stmt) -> bool:
 
 def add_slots_to_class(
     stub_lines: list[str],
-    node: ast.ClassDef,
+    info: typeshed_client.NameInfo,
     runtime_cls: type,
     replacement_lines: dict[int, list[str]],
     *,
@@ -482,13 +482,11 @@ def add_slots_to_class(
     if isinstance(getattr(runtime_cls, "_fields", None), tuple):
         # Probably a namedtuple, which always have empty __slots__. Not interesting.
         return
-    for stmt in node.body:
-        if isinstance(stmt, ast.Assign):
-            if any(
-                isinstance(target, ast.Name) and target.id == "__slots__"
-                for target in stmt.targets
-            ):
-                return
+    if info.child_nodes is not None and "__slots__" in info.child_nodes:
+        return
+
+    node = info.ast
+    assert isinstance(node, ast.ClassDef), "Expected node to be a ClassDef"
 
     yield LintError(
         MISSING_SLOTS,
@@ -528,48 +526,6 @@ def add_slots_to_class(
             replacement_lines[line_index] = [new_line, stub_lines[line_index]]
         else:
             replacement_lines[line_index] = [new_line]
-
-
-def gather_classes(
-    node: typeshed_client.NameInfo,
-    name: str,
-    fullname: str,
-    runtime_parent: type | types.ModuleType,
-    blacklisted_objects: frozenset[str],
-) -> Iterator[tuple[ast.ClassDef, type[object], str]]:
-    if fullname in blacklisted_objects:
-        log(f"Skipping {fullname}: blacklisted object")
-        return
-    if not isinstance(node.ast, ast.ClassDef):
-        return
-    if isinstance(runtime_parent, type(typing.Mapping)):
-        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
-    try:
-        try:
-            runtime = getattr(runtime_parent, name)
-        except AttributeError:
-            runtime = inspect.getattr_static(runtime_parent, name)
-    except Exception:
-        log("Could not find", fullname, "at runtime")
-        return
-    if isinstance(runtime, type):
-        yield node.ast, runtime, fullname
-    if node.child_nodes is not None:
-        for child_name, child_node in node.child_nodes.items():
-            if child_name.startswith("__") and not child_name.endswith("__"):
-                unmangled_parent_name = fullname.split(".")[-1]
-                maybe_mangled_child_name = (
-                    f"_{unmangled_parent_name.lstrip('_')}{child_name}"
-                )
-            else:
-                maybe_mangled_child_name = child_name
-            yield from gather_classes(
-                node=child_node,
-                name=maybe_mangled_child_name,
-                fullname=f"{fullname}.{child_name}",
-                runtime_parent=runtime,
-                blacklisted_objects=blacklisted_objects,
-            )
 
 
 def gather_funcs(
@@ -628,6 +584,76 @@ def gather_funcs(
         yield node.ast, runtime
 
 
+def locate_class(
+    node: typeshed_client.NameInfo,
+    name: str,
+    fullname: str,
+    runtime_parent: object,
+    blacklisted_objects: frozenset[str],
+) -> type[object] | None:
+    if fullname in blacklisted_objects:
+        log(f"Skipping {fullname}: blacklisted object")
+        return None
+    if not isinstance(node.ast, ast.ClassDef):
+        return None
+    if isinstance(runtime_parent, type(typing.Mapping)):
+        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
+    try:
+        try:
+            runtime = getattr(runtime_parent, name)
+        except AttributeError:
+            runtime = inspect.getattr_static(runtime_parent, name)
+    except Exception:
+        log("Could not find", fullname, "at runtime")
+        return None
+    if isinstance(runtime, type):
+        return runtime
+    return None
+
+
+def visit_classes(
+    name_dict: typeshed_client.parser.NameDict,
+    stub_lines: list[str],
+    replacement_lines: dict[int, list[str]],
+    config: Config,
+    path: Path,
+    enclosing_name: str,
+    runtime_parent: object,
+) -> Iterable[LintError]:
+    for name, info in name_dict.items():
+        if not isinstance(info.ast, ast.ClassDef):
+            continue
+        qualname = f"{enclosing_name}.{name}"
+        runtime_cls = locate_class(
+            node=info,
+            name=name,
+            fullname=qualname,
+            runtime_parent=runtime_parent,
+            blacklisted_objects=config.blacklisted_objects,
+        )
+        if runtime_cls is None:
+            continue
+        yield from add_slots_to_class(
+            stub_lines,
+            info,
+            runtime_cls,
+            replacement_lines,
+            config=config,
+            qualname=qualname,
+            path=path,
+        )
+        if info.child_nodes is not None:
+            yield from visit_classes(
+                info.child_nodes,
+                stub_lines,
+                replacement_lines,
+                config=config,
+                runtime_parent=runtime_parent,
+                enclosing_name=qualname,
+                path=path,
+            )
+
+
 def run_checks_with_runtime(
     module_name: str, context: typeshed_client.finder.SearchContext, *, config: Config
 ) -> Iterable[LintError]:
@@ -667,24 +693,15 @@ def run_checks_with_runtime(
             if new_lines:
                 replacement_lines.update(new_lines)
     if MISSING_SLOTS in config.enabled_errors:
-        for name, info in stub_names.items():
-            classes = gather_classes(
-                node=info,
-                name=name,
-                fullname=f"{module_name}.{name}",
-                runtime_parent=runtime_module,
-                blacklisted_objects=config.blacklisted_objects,
-            )
-            for class_node, runtime_cls, qualname in classes:
-                yield from add_slots_to_class(
-                    stub_lines,
-                    class_node,
-                    runtime_cls,
-                    replacement_lines,
-                    config=config,
-                    qualname=qualname,
-                    path=path,
-                )
+        yield from visit_classes(
+            name_dict=stub_names,
+            stub_lines=stub_lines,
+            replacement_lines=replacement_lines,
+            config=config,
+            path=path,
+            enclosing_name=module_name,
+            runtime_parent=runtime_module,
+        )
     if config.apply_fixes and replacement_lines:
         with path.open("w", encoding="utf-8") as f:
             for i, line in enumerate(stub_lines):
