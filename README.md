@@ -52,6 +52,9 @@ virtual environment.
   - `python -m stubdefaulter --typeshed-packages path/to/typeshed/stubs/requests path/to/typeshed/stubs/babel`
     - Like the above, but also _automatically installs_ the version of the
       package that typeshed supports
+- Errors can be suppresed by using a blacklist file (listing the fully qualified names of all objects
+  that should not be modified) or by adding suppression comments of the form
+  `# stubdefaulter: ignore[wrong-default]` or `# noqa: wrong-default`.
 
 ## Limitations/TODOs
 

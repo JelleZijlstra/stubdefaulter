@@ -25,9 +25,10 @@ from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 
-import libcst
+import libcst.metadata
 import tomli
 import typeshed_client.finder
+import typeshed_client.parser
 from libcst.metadata import MetadataWrapper, PositionProvider
 from termcolor import colored
 
@@ -65,7 +66,16 @@ class LintError:
     message: str
     filename: str
     line: int
-    fixed: bool = False
+    fixed: bool
+    source_lines: Sequence[str]
+    is_emitted: bool = field(init=False, default=False)
+
+    def __post_init__(self) -> None:
+        self.is_emitted = not is_suppressed(
+            self.code, line=self.line, source_lines=self.source_lines
+        )
+        if not self.is_emitted:
+            self.fixed = False
 
 
 def default_is_too_long(default: libcst.BaseExpression) -> bool:
@@ -79,6 +89,23 @@ def default_is_too_long(default: libcst.BaseExpression) -> bool:
 def log(config: Config, *objects: object) -> None:
     if config.verbose:
         print(colored(" ".join(map(str, objects)), "yellow"))
+
+
+def is_suppressed(code: str, *, line: int, source_lines: Sequence[str]) -> bool:
+    """Return True if the given error code is suppressed on the line.
+
+    Suppression markers (case-insensitive):
+    - "# stubdefaulter: ignore[<code>]"
+    - "# noqa: <code>"
+    """
+    if line <= 0 or line > len(source_lines):
+        return False
+    lt = source_lines[line - 1].lower()
+    if f"stubdefaulter: ignore[{code}]" in lt:
+        return True
+    if f"noqa: {code}" in lt:
+        return True
+    return False
 
 
 def infer_value_of_node(node: libcst.BaseExpression) -> object:
@@ -174,6 +201,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     config: Config
     file_path: str
     base_line_offset: int
+    source_lines: Sequence[str]
     errors: list[LintError] = field(default_factory=list)
 
     def get_matching_runtime_parameter(
@@ -369,18 +397,18 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
         if isinstance(original_node.default, libcst.Ellipsis):
             if MISSING_DEFAULT in self.config.enabled_errors:
                 runtime_value = infer_value_of_node(inferred_default)
-                fix_applied = bool(self.config.apply_fixes)
                 pos = get_position(self, original_node)
-                self.errors.append(
-                    LintError(
-                        MISSING_DEFAULT,
-                        f"parameter {param_name} missing default {runtime_value!r}",
-                        filename=self.file_path,
-                        line=self.base_line_offset + pos.start.line,
-                        fixed=fix_applied,
-                    )
+                abs_line = self.base_line_offset + pos.start.line
+                error = LintError(
+                    MISSING_DEFAULT,
+                    f"parameter {param_name} missing default {runtime_value!r}",
+                    filename=self.file_path,
+                    line=abs_line,
+                    fixed=self.config.apply_fixes,
+                    source_lines=self.source_lines,
                 )
-                if fix_applied:
+                self.errors.append(error)
+                if error.is_emitted:
                     return updated_node.with_changes(default=inferred_default)
             return updated_node
         else:
@@ -392,18 +420,18 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
                 existing_value
             ):
                 if WRONG_DEFAULT in self.config.enabled_errors:
-                    fix_applied = bool(self.config.apply_fixes)
                     pos = get_position(self, original_node)
-                    self.errors.append(
-                        LintError(
-                            WRONG_DEFAULT,
-                            f"parameter {param_name}: stub default {existing_value!r} != runtime default {inferred_value!r}",
-                            filename=self.file_path,
-                            line=self.base_line_offset + pos.start.line,
-                            fixed=fix_applied,
-                        )
+                    abs_line = self.base_line_offset + pos.start.line
+                    error = LintError(
+                        WRONG_DEFAULT,
+                        f"parameter {param_name}: stub default {existing_value!r} != runtime default {inferred_value!r}",
+                        filename=self.file_path,
+                        line=abs_line,
+                        fixed=self.config.apply_fixes,
+                        source_lines=self.source_lines,
                     )
-                    if fix_applied:
+                    self.errors.append(error)
+                    if error.is_emitted:
                         return updated_node.with_changes(default=inferred_default)
             return updated_node
 
@@ -452,6 +480,7 @@ def replace_defaults_in_func(
         config=config,
         file_path=str(path),
         base_line_offset=node.lineno - 1,
+        source_lines=stub_lines,
     )
     modified_module = wrapper.visit(visitor)
     output_dict: dict[int, list[str]] = {}
@@ -497,6 +526,7 @@ def remove_redundant_disjoint_base(
     config: Config,
     qualname: str,
     path: Path,
+    stub_lines: Sequence[str],
 ) -> Iterable[LintError]:
     node = info.ast
     assert isinstance(node, ast.ClassDef), "Expected node to be a ClassDef"
@@ -506,14 +536,16 @@ def remove_redundant_disjoint_base(
         return
     for deco in node.decorator_list:
         if is_disjoint_base_decorator(deco):
-            yield LintError(
+            error = LintError(
                 DISJOINT_BASE_WITH_SLOTS,
                 f"{qualname} has disjoint_base decorator, but also has __slots__",
                 filename=str(path),
                 line=deco.lineno,
                 fixed=bool(config.apply_fixes),
+                source_lines=stub_lines,
             )
-            if not config.apply_fixes:
+            yield error
+            if not error.is_emitted:
                 return
 
             lines_to_remove = range(get_start_lineno(deco) - 1, get_end_lineno(deco))
@@ -543,14 +575,16 @@ def add_slots_to_class(
     node = info.ast
     assert isinstance(node, ast.ClassDef), "Expected node to be a ClassDef"
 
-    yield LintError(
+    error = LintError(
         MISSING_SLOTS,
         f"{qualname} missing __slots__",
         filename=str(path),
         line=node.lineno,
         fixed=bool(config.apply_fixes),
+        source_lines=stub_lines,
     )
-    if not config.apply_fixes:
+    yield error
+    if not error.is_emitted:
         return
 
     indentation = (
@@ -672,6 +706,7 @@ def locate_class(
 
 def visit_classes_without_runtime(
     name_dict: typeshed_client.parser.NameDict,
+    stub_lines: list[str],
     replacement_lines: dict[int, list[str]],
     config: Config,
     path: Path,
@@ -687,10 +722,12 @@ def visit_classes_without_runtime(
             config=config,
             qualname=qualname,
             path=path,
+            stub_lines=stub_lines,
         )
         if info.child_nodes is not None:
             yield from visit_classes_without_runtime(
                 info.child_nodes,
+                stub_lines,
                 replacement_lines,
                 config=config,
                 enclosing_name=qualname,
@@ -738,6 +775,7 @@ def visit_classes_with_runtime(
                 config=config,
                 qualname=qualname,
                 path=path,
+                stub_lines=stub_lines,
             )
         if info.child_nodes is not None:
             yield from visit_classes_with_runtime(
@@ -803,6 +841,7 @@ def run_checks_with_runtime(
     if DISJOINT_BASE_WITH_SLOTS in config.enabled_errors:
         yield from visit_classes_without_runtime(
             name_dict=stub_names,
+            stub_lines=stub_lines,
             replacement_lines=replacement_lines,
             config=config,
             path=path,
@@ -823,6 +862,7 @@ class StubOnlyVisitor(libcst.CSTTransformer):
     METADATA_DEPENDENCIES = (PositionProvider,)
     config: Config
     file_path: str
+    source_lines: Sequence[str]
     errors: list[LintError] = field(default_factory=list)
 
     @staticmethod
@@ -872,18 +912,17 @@ class StubOnlyVisitor(libcst.CSTTransformer):
             return updated_node
         if MISSING_DEFAULT in self.config.enabled_errors:
             runtime_value = infer_value_of_node(new_default)
-            fix_applied = bool(self.config.apply_fixes)
             pos = get_position(self, original_node)
-            self.errors.append(
-                LintError(
-                    MISSING_DEFAULT,
-                    f"parameter {original_node.name.value} missing default {runtime_value!r}",
-                    filename=self.file_path,
-                    line=pos.start.line,
-                    fixed=fix_applied,
-                )
+            error = LintError(
+                MISSING_DEFAULT,
+                f"parameter {original_node.name.value} missing default {runtime_value!r}",
+                filename=self.file_path,
+                line=pos.start.line,
+                fixed=self.config.apply_fixes,
+                source_lines=self.source_lines,
             )
-            if fix_applied:
+            self.errors.append(error)
+            if error.is_emitted:
                 return updated_node.with_changes(default=new_default)
         return updated_node
 
@@ -900,7 +939,9 @@ def run_checks_without_runtime(
     source = path.read_text(encoding="utf-8")
     cst = libcst.parse_module(source)
     wrapper = MetadataWrapper(cst)
-    visitor = StubOnlyVisitor(config=config, file_path=str(path))
+    visitor = StubOnlyVisitor(
+        config=config, file_path=str(path), source_lines=source.splitlines()
+    )
     modified_cst = wrapper.visit(visitor)
     if config.apply_fixes and any(error.fixed for error in visitor.errors):
         path.write_text(modified_cst.code, encoding="utf-8")
@@ -1113,14 +1154,16 @@ def main() -> None:
 
     # Print collected lint results: green if fixed, red if not
     for e in errors:
-        text = f"{e.filename}:{e.line}: [{e.code}] {e.message}"
-        print(colored(text, "green" if e.fixed else "red"))
+        if e.is_emitted:
+            text = f"{e.filename}:{e.line}: [{e.code}] {e.message}"
+            print(colored(text, "green" if e.fixed else "red"))
     # Print summary per error code
     print("\nSummary:")
     for code in sorted(enabled_errors):
         total = sum(1 for err in errors if err.code == code)
         fixed = sum(1 for err in errors if err.code == code and err.fixed)
-        print(f"- {code}: {total} errors ({fixed} fixed)")
+        suppressed = sum(1 for err in errors if err.code == code and not err.is_emitted)
+        print(f"- {code}: {total} errors ({fixed} fixed, {suppressed} suppressed)")
 
     # Determine exit code
     changed = any(e.fixed for e in errors)
