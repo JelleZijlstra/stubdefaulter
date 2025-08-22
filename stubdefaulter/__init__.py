@@ -42,7 +42,10 @@ DEFAULT_LENGTH_LIMIT = 500
 MISSING_DEFAULT = "missing-default"
 WRONG_DEFAULT = "wrong-default"
 MISSING_SLOTS = "missing-slots"
-ALL_ERROR_CODES = frozenset({MISSING_DEFAULT, WRONG_DEFAULT, MISSING_SLOTS})
+DISJOINT_BASE_WITH_SLOTS = "disjoint-base-with-slots"
+ALL_ERROR_CODES = frozenset(
+    {MISSING_DEFAULT, WRONG_DEFAULT, MISSING_SLOTS, DISJOINT_BASE_WITH_SLOTS}
+)
 
 
 @dataclass(frozen=True)
@@ -403,7 +406,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             return updated_node
 
 
-def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+def get_end_lineno(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.expr) -> int:
     assert node.end_lineno is not None
     return node.end_lineno
 
@@ -474,6 +477,48 @@ def is_docstring_stmt(node: ast.stmt) -> bool:
     )
 
 
+def is_disjoint_base_decorator(node: ast.expr) -> bool:
+    return (isinstance(node, ast.Name) and node.id == "disjoint_base") or (
+        isinstance(node, ast.Attribute)
+        and node.attr == "disjoint_base"
+        and (
+            isinstance(node.value, ast.Name)
+            and node.value.id in ("typing_extensions", "typing")
+        )
+    )
+
+
+def remove_redundant_disjoint_base(
+    info: typeshed_client.NameInfo,
+    replacement_lines: dict[int, list[str]],
+    *,
+    config: Config,
+    qualname: str,
+    path: Path,
+) -> Iterable[LintError]:
+    node = info.ast
+    assert isinstance(node, ast.ClassDef), "Expected node to be a ClassDef"
+    if not node.decorator_list or info.child_nodes is None:
+        return
+    if "__slots__" not in info.child_nodes:
+        return
+    for deco in node.decorator_list:
+        if is_disjoint_base_decorator(deco):
+            yield LintError(
+                DISJOINT_BASE_WITH_SLOTS,
+                f"{qualname} has disjoint_base decorator, but also has __slots__",
+                filename=str(path),
+                line=deco.lineno,
+                fixed=bool(config.apply_fixes),
+            )
+            if not config.apply_fixes:
+                return
+
+            lines_to_remove = range(get_start_lineno(deco) - 1, get_end_lineno(deco))
+            for lineno in lines_to_remove:
+                replacement_lines[lineno] = []
+
+
 def add_slots_to_class(
     stub_lines: list[str],
     info: typeshed_client.NameInfo,
@@ -484,8 +529,6 @@ def add_slots_to_class(
     qualname: str,
     path: Path,
 ) -> Iterable[LintError]:
-    if MISSING_SLOTS not in config.enabled_errors:
-        return
     runtime_slots = runtime_cls.__dict__.get("__slots__")
     if runtime_slots is None:
         return
@@ -620,7 +663,35 @@ def locate_class(
     return None
 
 
-def visit_classes(
+def visit_classes_without_runtime(
+    name_dict: typeshed_client.parser.NameDict,
+    replacement_lines: dict[int, list[str]],
+    config: Config,
+    path: Path,
+    enclosing_name: str,
+) -> Iterable[LintError]:
+    for name, info in name_dict.items():
+        if not isinstance(info.ast, ast.ClassDef):
+            continue
+        qualname = f"{enclosing_name}.{name}"
+        yield from remove_redundant_disjoint_base(
+            info,
+            replacement_lines,
+            config=config,
+            qualname=qualname,
+            path=path,
+        )
+        if info.child_nodes is not None:
+            yield from visit_classes_without_runtime(
+                info.child_nodes,
+                replacement_lines,
+                config=config,
+                enclosing_name=qualname,
+                path=path,
+            )
+
+
+def visit_classes_with_runtime(
     name_dict: typeshed_client.parser.NameDict,
     stub_lines: list[str],
     replacement_lines: dict[int, list[str]],
@@ -642,17 +713,26 @@ def visit_classes(
         )
         if runtime_cls is None:
             continue
-        yield from add_slots_to_class(
-            stub_lines,
-            info,
-            runtime_cls,
-            replacement_lines,
-            config=config,
-            qualname=qualname,
-            path=path,
-        )
+        if MISSING_SLOTS in config.enabled_errors:
+            yield from add_slots_to_class(
+                stub_lines,
+                info,
+                runtime_cls,
+                replacement_lines,
+                config=config,
+                qualname=qualname,
+                path=path,
+            )
+        if DISJOINT_BASE_WITH_SLOTS in config.enabled_errors:
+            yield from remove_redundant_disjoint_base(
+                info,
+                replacement_lines,
+                config=config,
+                qualname=qualname,
+                path=path,
+            )
         if info.child_nodes is not None:
-            yield from visit_classes(
+            yield from visit_classes_with_runtime(
                 info.child_nodes,
                 stub_lines,
                 replacement_lines,
@@ -702,7 +782,7 @@ def run_checks_with_runtime(
             if new_lines:
                 replacement_lines.update(new_lines)
     if MISSING_SLOTS in config.enabled_errors:
-        yield from visit_classes(
+        yield from visit_classes_with_runtime(
             name_dict=stub_names,
             stub_lines=stub_lines,
             replacement_lines=replacement_lines,
@@ -710,6 +790,14 @@ def run_checks_with_runtime(
             path=path,
             enclosing_name=module_name,
             runtime_parent=runtime_module,
+        )
+    if DISJOINT_BASE_WITH_SLOTS in config.enabled_errors:
+        yield from visit_classes_without_runtime(
+            name_dict=stub_names,
+            replacement_lines=replacement_lines,
+            config=config,
+            path=path,
+            enclosing_name=module_name,
         )
     if config.apply_fixes and replacement_lines:
         with path.open("w", encoding="utf-8") as f:

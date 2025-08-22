@@ -5,7 +5,9 @@ A tool for linting and autofixing Python type stubs.
 Currently, it supports the following checks:
 - `missing-default`: parameters missing a default value (has autofix)
 - `wrong-default`: the default value of a parameter differs from the runtime
-- `missing-slots`: for classes that define `__slots__` at runtime but not in the stub
+- `missing-slots`: for classes that define `__slots__` at runtime but not in the stub (has autofix)
+- `disjoint-base-with-slots`: remove `@disjoint_base` decorator (PEP 800) for classes that
+  also define `__slots__` (has autofix)
 
 ## Background
 
