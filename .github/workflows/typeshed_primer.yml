@@ -50,7 +50,7 @@ jobs:
       - name: Run stubdefaulter on the target branch
         run: |
           cd typeshed
-          stubdefaulter --stdlib-path stdlib --exit-zero
+          stubdefaulter --stdlib-path stdlib --exit-zero --fix
           git commit -a -m "With old stubdefaulter"
       - name: Install stubdefaulter for the PR branch
         run: pip install -e new_stubdefaulter
@@ -59,7 +59,7 @@ jobs:
           cd typeshed
           git checkout HEAD~1 -- stdlib
           git restore --staged stdlib
-          stubdefaulter --stdlib-path stdlib --exit-zero
+          stubdefaulter --stdlib-path stdlib --exit-zero --fix
       - name: Get the diff between the two stubdefaulter runs
         run: |
           cd typeshed
