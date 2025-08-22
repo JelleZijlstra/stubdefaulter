@@ -1036,6 +1036,13 @@ def main() -> None:
         help="Disable specific error codes",
     )
     parser.add_argument(
+        "--only",
+        nargs="*",
+        choices=sorted(ALL_ERROR_CODES),
+        default=None,
+        help="Enable only the specified error codes (disables all others)",
+    )
+    parser.add_argument(
         "--fix",
         action="store_true",
         help="Apply autofixes to stubs",
@@ -1060,7 +1067,12 @@ def main() -> None:
     context = typeshed_client.finder.get_search_context(
         typeshed=stdlib_path, search_path=package_paths, version=sys.version_info[:2]
     )
-    enabled_errors = frozenset(ALL_ERROR_CODES - set(args.disable))
+    if args.only is not None and args.disable:
+        parser.error("Cannot use --only with --disable; choose one")
+    if args.only is not None:
+        enabled_errors = frozenset(args.only)
+    else:
+        enabled_errors = frozenset(ALL_ERROR_CODES - set(args.disable))
     errors: list[LintError] = []
     config = Config(
         enabled_errors=enabled_errors,
