@@ -273,15 +273,30 @@ def too_long(
 PKG_NAME = "pkg"
 
 
-def test_stubdefaulter() -> None:
+@pytest.mark.parametrize(
+    "py_file, input_stub, expected_stub, expected_codes",
+    [
+        # (PY_FILE, INPUT_STUB, EXPECTED_STUB, {stubdefaulter.MISSING_DEFAULT, stubdefaulter.WRONG_DEFAULT, stubdefaulter.MISSING_SLOTS}),
+        # (PY_FILE, INPUT_STUB.replace(" = 1", " = ..."), EXPECTED_STUB, {stubdefaulter.MISSING_DEFAULT, stubdefaulter.MISSING_SLOTS}),
+        (
+            "def f(x=1): pass\n",
+            "def f(__x: int = ...): ...\n",
+            "def f(__x: int = 1): ...\n",
+            {stubdefaulter.MISSING_DEFAULT},
+        )
+    ],
+)
+def test_stubdefaulter(
+    py_file: str, input_stub: str, expected_stub: str, expected_codes: set[str]
+) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         sys.path.append(tmpdir)
         td = Path(tmpdir)
         pkg_path = td / PKG_NAME
         pkg_path.mkdir()
         stub_path = pkg_path / "__init__.pyi"
-        stub_path.write_text(INPUT_STUB)
-        (pkg_path / "__init__.py").write_text(PY_FILE)
+        stub_path.write_text(input_stub)
+        (pkg_path / "__init__.py").write_text(py_file)
         (pkg_path / "py.typed").write_text("typed\n")
 
         config = stubdefaulter.Config(
@@ -290,28 +305,16 @@ def test_stubdefaulter() -> None:
             add_complex_defaults=True,
             blacklisted_objects=frozenset(),
         )
-        errors = stubdefaulter.run_on_stub(
-            PKG_NAME,
-            typeshed_client.finder.get_search_context(search_path=[td]),
-            config=config,
+        errors = list(
+            stubdefaulter.run_on_stub(
+                PKG_NAME,
+                typeshed_client.finder.get_search_context(search_path=[td]),
+                config=config,
+            )
         )
-        assert stub_path.read_text() == EXPECTED_STUB
+        assert stub_path.read_text() == expected_stub
         codes = {e.code for e in errors}
-        assert stubdefaulter.MISSING_DEFAULT in codes
-        assert stubdefaulter.WRONG_DEFAULT in codes
-        assert stubdefaulter.MISSING_SLOTS in codes
-
-        stub_path.write_text(INPUT_STUB.replace(" = 1", " = ..."))
-        errors = stubdefaulter.run_on_stub(
-            PKG_NAME,
-            typeshed_client.finder.get_search_context(search_path=[td]),
-            config=config,
-        )
-        assert stub_path.read_text() == EXPECTED_STUB
-        codes = {e.code for e in errors}
-        assert stubdefaulter.WRONG_DEFAULT not in codes
-        assert stubdefaulter.MISSING_DEFAULT in codes
-        assert stubdefaulter.MISSING_SLOTS in codes
+        assert codes == expected_codes
 
 
 @pytest.mark.parametrize(

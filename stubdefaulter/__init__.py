@@ -430,7 +430,7 @@ def replace_defaults_in_func(
     assert isinstance(cst, libcst.FunctionDef)
     # Wrap a synthetic module to enable metadata and transformations
     module = libcst.Module(body=[cst])
-    wrapper = MetadataWrapper(module)
+    wrapper = MetadataWrapper(module, unsafe_skip_copy=True)
     visitor = ReplaceEllipsesUsingRuntime(
         sig,
         cst.params,
