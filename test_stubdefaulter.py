@@ -357,6 +357,43 @@ def test_stubdefaulter(
         sys.path.pop()
 
 
+def test_inline_suppression_wrong_default() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sys.path.append(tmpdir)
+        td = Path(tmpdir)
+        mod = "modsupp"
+        pkg_path = td / mod
+        pkg_path.mkdir()
+        stub_path = pkg_path / "__init__.pyi"
+        stub_path.write_text(
+            "def f(x: int = 1): ...  # stubdefaulter: ignore[wrong-default]\n"
+        )
+        (pkg_path / "__init__.py").write_text("def f(x=0):\n    pass\n")
+        (pkg_path / "py.typed").write_text("typed\n")
+
+        config = stubdefaulter.Config(
+            enabled_errors=frozenset({stubdefaulter.WRONG_DEFAULT}),
+            apply_fixes=True,
+            add_complex_defaults=True,
+            blacklisted_objects=frozenset(),
+        )
+        errors = list(
+            stubdefaulter.run_on_stub(
+                mod,
+                typeshed_client.finder.get_search_context(search_path=[td]),
+                config=config,
+            )
+        )
+        # Should not change the stub due to suppression
+        assert (
+            stub_path.read_text()
+            == "def f(x: int = 1): ...  # stubdefaulter: ignore[wrong-default]\n"
+        )
+        # No wrong-default errors emitted
+        assert not any(e.is_emitted for e in errors)
+        sys.path.pop()
+
+
 @pytest.mark.parametrize(
     "obj",
     [
