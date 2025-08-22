@@ -1,3 +1,4 @@
+import random
 import sys
 import tempfile
 from pathlib import Path
@@ -276,14 +277,28 @@ PKG_NAME = "pkg"
 @pytest.mark.parametrize(
     "py_file, input_stub, expected_stub, expected_codes",
     [
-        # (PY_FILE, INPUT_STUB, EXPECTED_STUB, {stubdefaulter.MISSING_DEFAULT, stubdefaulter.WRONG_DEFAULT, stubdefaulter.MISSING_SLOTS}),
-        # (PY_FILE, INPUT_STUB.replace(" = 1", " = ..."), EXPECTED_STUB, {stubdefaulter.MISSING_DEFAULT, stubdefaulter.MISSING_SLOTS}),
+        (
+            PY_FILE,
+            INPUT_STUB,
+            EXPECTED_STUB,
+            {
+                stubdefaulter.MISSING_DEFAULT,
+                stubdefaulter.WRONG_DEFAULT,
+                stubdefaulter.MISSING_SLOTS,
+            },
+        ),
+        (
+            PY_FILE,
+            INPUT_STUB.replace(" = 1", " = ..."),
+            EXPECTED_STUB,
+            {stubdefaulter.MISSING_DEFAULT, stubdefaulter.MISSING_SLOTS},
+        ),
         (
             "def f(x=1): pass\n",
             "def f(__x: int = ...): ...\n",
             "def f(__x: int = 1): ...\n",
             {stubdefaulter.MISSING_DEFAULT},
-        )
+        ),
     ],
 )
 def test_stubdefaulter(
@@ -292,7 +307,8 @@ def test_stubdefaulter(
     with tempfile.TemporaryDirectory() as tmpdir:
         sys.path.append(tmpdir)
         td = Path(tmpdir)
-        pkg_path = td / PKG_NAME
+        pkg_name = random.randbytes(8).hex()
+        pkg_path = td / pkg_name
         pkg_path.mkdir()
         stub_path = pkg_path / "__init__.pyi"
         stub_path.write_text(input_stub)
@@ -307,7 +323,7 @@ def test_stubdefaulter(
         )
         errors = list(
             stubdefaulter.run_on_stub(
-                PKG_NAME,
+                pkg_name,
                 typeshed_client.finder.get_search_context(search_path=[td]),
                 config=config,
             )
@@ -315,6 +331,8 @@ def test_stubdefaulter(
         assert stub_path.read_text() == expected_stub
         codes = {e.code for e in errors}
         assert codes == expected_codes
+
+        sys.path.pop()
 
 
 @pytest.mark.parametrize(
