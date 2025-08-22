@@ -159,6 +159,9 @@ def overloaded(x: Literal[False] = ...) -> str: ...
 @overload
 def overloaded(x: Literal[True]) -> int: ...
 
+@typing_extensions.disjoint_base
+class WithSolidSlots:
+    __slots__ = ('x', 'y')
 def intenum_default(x: int = ...) -> int: ...
 
 class FooEnum(str, enum.Enum):
@@ -240,6 +243,8 @@ def overloaded(x: Literal[False] = False) -> str: ...
 @overload
 def overloaded(x: Literal[True]) -> int: ...
 
+class WithSolidSlots:
+    __slots__ = ('x', 'y')
 def intenum_default(x: int = ...) -> int: ...
 
 class FooEnum(str, enum.Enum):
@@ -285,19 +290,36 @@ PKG_NAME = "pkg"
                 stubdefaulter.MISSING_DEFAULT,
                 stubdefaulter.WRONG_DEFAULT,
                 stubdefaulter.MISSING_SLOTS,
+                stubdefaulter.DISJOINT_BASE_WITH_SLOTS,
             },
         ),
         (
             PY_FILE,
             INPUT_STUB.replace(" = 1", " = ..."),
             EXPECTED_STUB,
-            {stubdefaulter.MISSING_DEFAULT, stubdefaulter.MISSING_SLOTS},
+            {
+                stubdefaulter.MISSING_DEFAULT,
+                stubdefaulter.MISSING_SLOTS,
+                stubdefaulter.DISJOINT_BASE_WITH_SLOTS,
+            },
         ),
         (
             "def f(x=1): pass\n",
             "def f(__x: int = ...): ...\n",
             "def f(__x: int = 1): ...\n",
             {stubdefaulter.MISSING_DEFAULT},
+        ),
+        (
+            "",
+            "import typing_extensions\n@typing_extensions.disjoint_base\nclass C:\n    __slots__ = ('x',)\n",
+            "import typing_extensions\nclass C:\n    __slots__ = ('x',)\n",
+            {stubdefaulter.DISJOINT_BASE_WITH_SLOTS},
+        ),
+        (
+            "",
+            "from typing_extensions import disjoint_base\n@disjoint_base\nclass C:\n    __slots__ = ('x',)\n",
+            "from typing_extensions import disjoint_base\nclass C:\n    __slots__ = ('x',)\n",
+            {stubdefaulter.DISJOINT_BASE_WITH_SLOTS},
         ),
     ],
 )
@@ -307,7 +329,7 @@ def test_stubdefaulter(
     with tempfile.TemporaryDirectory() as tmpdir:
         sys.path.append(tmpdir)
         td = Path(tmpdir)
-        pkg_name = random.randbytes(8).hex()
+        pkg_name = f"mod{random.randbytes(8).hex()}"
         pkg_path = td / pkg_name
         pkg_path.mkdir()
         stub_path = pkg_path / "__init__.pyi"
