@@ -151,6 +151,16 @@ def is_complex_default(value: object, *, allow_containers: bool = True) -> bool:
         return True
 
 
+def get_position(
+    visitor: libcst.CSTTransformer, node: libcst.CSTNode
+) -> libcst.metadata.CodeRange:
+    """Get the position of a node using metadata."""
+    pos = visitor.get_metadata(PositionProvider, node)
+    if not isinstance(pos, libcst.metadata.CodeRange):
+        raise ValueError("Node has no position metadata")
+    return pos
+
+
 @dataclass
 class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
     METADATA_DEPENDENCIES = (PositionProvider,)
@@ -355,7 +365,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             if MISSING_DEFAULT in self.config.enabled_errors:
                 runtime_value = infer_value_of_node(inferred_default)
                 fix_applied = bool(self.config.apply_fixes)
-                pos = self.get_metadata(PositionProvider, original_node)
+                pos = get_position(self, original_node)
                 self.errors.append(
                     LintError(
                         MISSING_DEFAULT,
@@ -378,7 +388,7 @@ class ReplaceEllipsesUsingRuntime(libcst.CSTTransformer):
             ):
                 if WRONG_DEFAULT in self.config.enabled_errors:
                     fix_applied = bool(self.config.apply_fixes)
-                    pos = self.get_metadata(PositionProvider, original_node)
+                    pos = get_position(self, original_node)
                     self.errors.append(
                         LintError(
                             WRONG_DEFAULT,
@@ -596,8 +606,7 @@ def locate_class(
         return None
     if not isinstance(node.ast, ast.ClassDef):
         return None
-    if isinstance(runtime_parent, type(typing.Mapping)):
-        runtime_parent = runtime_parent.__origin__  # type: ignore[attr-defined]
+    runtime_parent = getattr(runtime_parent, "__origin__", runtime_parent)
     try:
         try:
             runtime = getattr(runtime_parent, name)
@@ -767,8 +776,7 @@ class StubOnlyVisitor(libcst.CSTTransformer):
         if MISSING_DEFAULT in self.config.enabled_errors:
             runtime_value = infer_value_of_node(new_default)
             fix_applied = bool(self.config.apply_fixes)
-            # Use metadata to report accurate source line
-            pos = self.get_metadata(PositionProvider, original_node)
+            pos = get_position(self, original_node)
             self.errors.append(
                 LintError(
                     MISSING_DEFAULT,
