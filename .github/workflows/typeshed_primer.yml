@@ -34,32 +34,26 @@ jobs:
         with:
           repository: python/typeshed
           path: typeshed
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: new_stubdefaulter/pyproject.toml
       - name: Setup git
         run: |
           git config --global user.name stubdefaulter
           git config --global user.email ''
-      - name: Install stubdefaulter for the target branch
-        run: pip install -e old_stubdefaulter
-      - run: pip freeze --all
       - name: Run stubdefaulter on the target branch
         run: |
+          uv run --no-project --with-editable old_stubdefaulter stubdefaulter --stdlib-path typeshed/stdlib --exit-zero --fix
           cd typeshed
-          stubdefaulter --stdlib-path stdlib --exit-zero --fix
           git commit -a -m "With old stubdefaulter"
-      - name: Install stubdefaulter for the PR branch
-        run: pip install -e new_stubdefaulter
       - name: Run stubdefaulter on PR branch
         run: |
           cd typeshed
           git checkout HEAD~1 -- stdlib
           git restore --staged stdlib
-          stubdefaulter --stdlib-path stdlib --exit-zero --fix
+          cd ..
+          uv run --no-project --with-editable new_stubdefaulter stubdefaulter --stdlib-path typeshed/stdlib --exit-zero --fix
       - name: Get the diff between the two stubdefaulter runs
         run: |
           cd typeshed
