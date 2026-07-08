@@ -12,9 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15-dev"]
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v6
-      - run: PYTHONPATH=. uv run --python ${{ matrix.python-version }} -m pycroscope --config-file pyproject.toml stubdefaulter/
+      - run: PYTHONPATH=. uv run --frozen --python python -m pycroscope --config-file pyproject.toml stubdefaulter/
