@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "stubdefaulter"
 version = "0.1.0"
 description = "Auto-add default values to stubs"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["libcst", "termcolor>=2", "typeshed_client>=2.2.0", "tomli"]
 license = "MIT"
 readme = "README.md"
@@ -24,7 +24,7 @@ name = "Jelle Zijlstra, Alex Waygood"
 email = "jelle.zijlstra@gmail.com"
 
 [dependency-groups]
-dev = ["pytest", "pycroscope==0.2.0"]
+dev = ["pytest", "pycroscope==0.4.0"]
 
 [tool.hatch.build]
 packages = ["stubdefaulter"]

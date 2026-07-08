@@ -958,19 +958,6 @@ def run_on_stub(
     yield from run_checks_with_runtime(module_name, context, config=config)
 
 
-def is_relative_to(left: Path, right: Path) -> bool:
-    """Return True if the path is relative to another path or False.
-
-    Redundant with Path.is_relative_to in 3.9+.
-
-    """
-    try:
-        left.relative_to(right)
-        return True
-    except ValueError:
-        return False
-
-
 def install_typeshed_packages(typeshed_paths: Sequence[Path]) -> None:
     to_install: list[str] = []
     for path in typeshed_paths:
@@ -1139,7 +1126,7 @@ def main() -> None:
     )
     # Counts removed; rely on collected errors and their `fixed` status
     for module, path in typeshed_client.get_all_stub_files(context):
-        if stdlib_path is not None and is_relative_to(path, stdlib_path):
+        if stdlib_path is not None and path.is_relative_to(stdlib_path):
             if any(
                 path.relative_to(stdlib_path).match(pattern)
                 for pattern in STDLIB_MODULE_BLACKLIST
@@ -1149,7 +1136,7 @@ def main() -> None:
             else:
                 errors += run_on_stub(module, context, config=config)
 
-        elif any(is_relative_to(path, p) for p in package_paths):
+        elif any(path.is_relative_to(p) for p in package_paths):
             errors += run_on_stub(module, context, config=config)
 
     # Print collected lint results: green if fixed, red if not
