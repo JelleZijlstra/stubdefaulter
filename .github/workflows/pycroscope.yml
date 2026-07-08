@@ -15,12 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15-dev"]
+        include:
+          - python-version: "3.10"
+            uv-python-version: "3.10"
+          - python-version: "3.11"
+            uv-python-version: "3.11"
+          - python-version: "3.12"
+            uv-python-version: "3.12"
+          - python-version: "3.13"
+            uv-python-version: "3.13"
+          - python-version: "3.14"
+            uv-python-version: "3.14"
+          - python-version: "3.15-dev"
+            uv-python-version: "3.15"
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v6
-      - run: PYTHONPATH=. uv run --frozen --python python -m pycroscope --config-file pyproject.toml stubdefaulter/
+        with:
+          python-version: ${{ matrix.uv-python-version }}
+      - run: PYTHONPATH=. uv run --frozen -m pycroscope --config-file pyproject.toml stubdefaulter/
